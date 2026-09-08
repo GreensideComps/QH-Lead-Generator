@@ -17,13 +17,28 @@ import { createCheckoutSession, handleStripeWebhook, isStripeConfigured, StripeN
 import { withTenant } from "../db/withTenant.js";
 import { requireEnv } from "../db/pool.js";
 import { ensureCsrfToken, verifyCsrf, csrfField } from "./csrf.js";
+import type { Request, Response, NextFunction, RequestHandler } from "express";
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
 
+/**
+ * Express 4 does not await async route handlers or catch their rejections —
+ * an unhandled rejection anywhere in one (a DB hiccup, an unexpected API
+ * error) becomes an unhandledRejection at the process level, which crashes
+ * the entire server for every customer, not just the one request. Every
+ * async handler below is wrapped with this so a failure always reaches the
+ * error-handling middleware at the bottom of this file instead.
+ */
+function ah(fn: (req: Request, res: Response, next: NextFunction) => Promise<void>): RequestHandler {
+  return (req, res, next) => {
+    fn(req, res, next).catch(next);
+  };
+}
+
 // Stripe webhook needs the raw body for signature verification — must be
 // registered BEFORE express.urlencoded()/express.json() touch the body.
-app.post("/billing/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+app.post("/billing/webhook", express.raw({ type: "application/json" }), ah(async (req, res) => {
   try {
     const signature = req.headers["stripe-signature"] as string;
     const result = await handleStripeWebhook(req.body, signature);
@@ -36,7 +51,7 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
     console.error("Stripe webhook error:", err);
     res.status(400).json({ error: "Webhook verification failed" });
   }
-});
+}));
 
 // Fails loudly rather than silently signing sessions with a guessable
 // default — the same discipline requireEnv already applies to DATABASE_URL.
@@ -103,7 +118,7 @@ app.get("/login", (req, res) => {
   res.send(renderLogin((req as any).session.csrfToken));
 });
 
-app.post("/login", loginLimiter, verifyCsrf, async (req, res) => {
+app.post("/login", loginLimiter, verifyCsrf, ah(async (req, res) => {
   const { email, password } = req.body;
   const user = await attemptLogin(email, password);
   if (!user) {
@@ -115,14 +130,14 @@ app.post("/login", loginLimiter, verifyCsrf, async (req, res) => {
   (req as any).session.businessName = user.businessName;
   await recordEvent(user.businessId, user.userId, "customer_returned");
   res.redirect("/my-opportunities");
-});
+}));
 
 app.post("/logout", verifyCsrf, (req, res) => {
   (req as any).session = null;
   res.redirect("/login");
 });
 
-app.get("/my-opportunities", requireAuth, async (req, res) => {
+app.get("/my-opportunities", requireAuth, ah(async (req, res) => {
   const user = currentUser(req)!;
   const [items, stats, balance] = await Promise.all([
     listOpportunities(user.businessId),
@@ -130,9 +145,9 @@ app.get("/my-opportunities", requireAuth, async (req, res) => {
     getCreditBalance(user.businessId),
   ]);
   res.send(renderMyOpportunities(navFor(req, user.businessName, balance, "my-opportunities"), items, stats));
-});
+}));
 
-app.get("/discover", requireAuth, async (req, res) => {
+app.get("/discover", requireAuth, ah(async (req, res) => {
   const user = currentUser(req)!;
   const search = typeof req.query.search === "string" ? req.query.search : undefined;
   const minScore = typeof req.query.minScore === "string" && req.query.minScore !== "" ? Number(req.query.minScore) : undefined;
@@ -149,9 +164,9 @@ app.get("/discover", requireAuth, async (req, res) => {
       minScore: minScore !== undefined ? String(minScore) : undefined,
     }),
   );
-});
+}));
 
-app.get("/opportunities/:id", requireAuth, async (req, res) => {
+app.get("/opportunities/:id", requireAuth, ah(async (req, res) => {
   const user = currentUser(req)!;
   const data = await getOpportunityDetail(user.businessId, req.params.id);
   if (!data) {
@@ -164,17 +179,17 @@ app.get("/opportunities/:id", requireAuth, async (req, res) => {
 
   const balance = await getCreditBalance(user.businessId);
   res.send(renderOpportunityDetail(navFor(req, user.businessName, balance, "discover"), data));
-});
+}));
 
-app.post("/opportunities/:id/status", requireAuth, verifyCsrf, async (req, res) => {
+app.post("/opportunities/:id/status", requireAuth, verifyCsrf, ah(async (req, res) => {
   const user = currentUser(req)!;
   const status = String(req.body.status);
   await updateStatus(user.businessId, req.params.id, status);
   if (status === "interested") await recordEvent(user.businessId, user.userId, "opportunity_saved", req.params.id);
   res.redirect(`/opportunities/${req.params.id}`);
-});
+}));
 
-app.post("/opportunities/:id/unlock", requireAuth, verifyCsrf, async (req, res) => {
+app.post("/opportunities/:id/unlock", requireAuth, verifyCsrf, ah(async (req, res) => {
   const user = currentUser(req)!;
   const opportunityId = req.params.id;
 
@@ -228,9 +243,9 @@ app.post("/opportunities/:id/unlock", requireAuth, verifyCsrf, async (req, res) 
   await recordEvent(user.businessId, user.userId, "intelligence_consumed", opportunityId);
 
   res.redirect(`/opportunities/${opportunityId}`);
-});
+}));
 
-app.get("/billing", requireAuth, async (req, res) => {
+app.get("/billing", requireAuth, ah(async (req, res) => {
   const user = currentUser(req)!;
   const balance = await getCreditBalance(user.businessId);
   const transactions = await withTenant(user.businessId, async (client) => {
@@ -241,9 +256,9 @@ app.get("/billing", requireAuth, async (req, res) => {
     return rows;
   });
   res.send(renderBilling(navFor(req, user.businessName, balance, "billing"), balance, transactions));
-});
+}));
 
-app.post("/billing/checkout", requireAuth, verifyCsrf, async (req, res) => {
+app.post("/billing/checkout", requireAuth, verifyCsrf, ah(async (req, res) => {
   const user = currentUser(req)!;
   if (!isStripeConfigured()) {
     res.status(501).send("Stripe is not configured in this environment. See docs/architecture/04-implementation-status.md.");
@@ -257,7 +272,7 @@ app.post("/billing/checkout", requireAuth, verifyCsrf, async (req, res) => {
     console.error("Checkout error:", err);
     res.status(500).send("Could not create checkout session.");
   }
-});
+}));
 
 // Global error handler — added per the AI-integration audit finding that no
 // route in this app previously caught an unexpected failure (e.g. a DB
