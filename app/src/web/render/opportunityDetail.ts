@@ -12,6 +12,7 @@ interface DetailData {
 export function renderOpportunityDetail(nav: NavContext, data: DetailData): string {
   const { opportunity: o, match: m, commercial: c, evidence, requirements, unlock } = data;
   const band = m ? scoreBand(m.total_score) : { cls: "muted", label: "Unscored" };
+  const unlocked = !!unlock;
 
   const body = `
     <a href="/discover" style="font-size:.8rem;color:var(--ink-muted);">&larr; Back to Discover</a>
@@ -41,29 +42,12 @@ export function renderOpportunityDetail(nav: NavContext, data: DetailData): stri
             </div>
             <div>
               <span class="pill pill--${band.cls}">${band.label}</span>
-              <div style="font-size:.78rem;color:var(--ink-muted);margin-top:.3rem;">Source: <a href="${escapeHtml(o.source_url)}" target="_blank" rel="noopener">${escapeHtml(o.source_url)}</a></div>
+              <div style="font-size:.78rem;color:var(--ink-muted);margin-top:.3rem;">${unlocked ? `Source: <a href="${escapeHtml(o.source_url)}" target="_blank" rel="noopener">${escapeHtml(o.source_url)}</a>` : lockedFact("Source link")}</div>
             </div>
           </div>
-          <div class="fact"><span class="fact__label">Deadline</span><span class="fact__value mono">${o.deadline ?? "Not stated"}</span></div>
-          <div class="fact"><span class="fact__label">Published</span><span class="fact__value mono">${o.published_date ?? "Unknown"}</span></div>
-          <div class="fact"><span class="fact__label">Contract value</span><span class="fact__value mono">${o.value_low ? fmtGBP(Number(o.value_low)) + (o.value_high && Number(o.value_high) !== Number(o.value_low) ? " – " + fmtGBP(Number(o.value_high)) : "") : "Not stated"}</span></div>
-        </div>
-
-        <div class="card">
-          <h3 style="font-size:.92rem;margin-bottom:.5rem;">Why this matches</h3>
-          ${m ? matchBreakdown(m) : "<em>Not yet scored.</em>"}
-        </div>
-
-        <div class="card">
-          <h3 style="font-size:.92rem;margin-bottom:.5rem;">What we know</h3>
-          ${
-            requirements.filter((r) => r.confidence === "verified").length
-              ? requirements
-                  .filter((r) => r.confidence === "verified")
-                  .map((r: any) => `<div class="fact"><span class="fact__label">${escapeHtml(r.field_name.replace(/_/g, " "))}</span><span class="fact__value" style="text-align:right;max-width:60%;font-family:'Public Sans';font-weight:500;">${escapeHtml(r.value_text)} ${badge(r.confidence)}</span></div>`)
-                  .join("")
-              : "<em>Nothing directly extracted yet from the source text.</em>"
-          }
+          <div class="fact"><span class="fact__label">Deadline</span><span class="fact__value mono">${unlocked ? (o.deadline ?? "Not stated") : lockedFact()}</span></div>
+          <div class="fact"><span class="fact__label">Published</span><span class="fact__value mono">${unlocked ? (o.published_date ?? "Unknown") : lockedFact()}</span></div>
+          <div class="fact"><span class="fact__label">Contract value</span><span class="fact__value mono">${unlocked ? (o.value_low ? fmtGBP(Number(o.value_low)) + (o.value_high && Number(o.value_high) !== Number(o.value_low) ? " – " + fmtGBP(Number(o.value_high)) : "") : "Not stated") : lockedFact()}</span></div>
         </div>
 
         <div class="card">
@@ -71,29 +55,76 @@ export function renderOpportunityDetail(nav: NavContext, data: DetailData): stri
           ${commercialSection(c)}
         </div>
 
+        ${!unlocked ? unlockCard(o.id) : ""}
+
+        <div class="card">
+          <h3 style="font-size:.92rem;margin-bottom:.5rem;">Why this matches</h3>
+          ${!unlocked ? `<em>Full match breakdown included when you unlock this opportunity.</em>` : m ? matchBreakdown(m) : "<em>Not yet scored.</em>"}
+        </div>
+
+        <div class="card">
+          <h3 style="font-size:.92rem;margin-bottom:.5rem;">What we know</h3>
+          ${
+            !unlocked
+              ? `<em>Extracted requirements included when you unlock this opportunity.</em>`
+              : requirements.filter((r) => r.confidence === "verified").length
+                ? requirements
+                    .filter((r) => r.confidence === "verified")
+                    .map((r: any) => `<div class="fact"><span class="fact__label">${escapeHtml(r.field_name.replace(/_/g, " "))}</span><span class="fact__value" style="text-align:right;max-width:60%;font-family:'Public Sans';font-weight:500;">${escapeHtml(r.value_text)} ${badge(r.confidence)}</span></div>`)
+                    .join("")
+                : "<em>Nothing directly extracted yet from the source text.</em>"
+          }
+        </div>
+
         <div class="card">
           <h3 style="font-size:.92rem;margin-bottom:.5rem;">Deep intelligence</h3>
-          ${unlock ? unlockedContent(unlock) : lockedPrompt(o.id)}
+          ${unlock ? unlockedContent(unlock) : `<em>A synthesised recommendation is included when you unlock this opportunity.</em>`}
         </div>
 
         <div class="card">
           <h3 style="font-size:.92rem;margin-bottom:.5rem;">Source evidence</h3>
-          <div class="table-wrap"><table class="evi-table">
-            <thead><tr><th>Claim</th><th>Value</th><th>Provenance</th></tr></thead>
-            <tbody>${evidence.map((e: any) => `<tr><td>${escapeHtml(e.claim)}</td><td class="mono">${escapeHtml(e.value_text)}</td><td>${badge(e.confidence)}</td></tr>`).join("")}</tbody>
-          </table></div>
+          ${
+            !unlocked
+              ? `<em>The full evidence trail (source-quoted claims + provenance) is included when you unlock this opportunity.</em>`
+              : `<div class="table-wrap"><table class="evi-table">
+                  <thead><tr><th>Claim</th><th>Value</th><th>Provenance</th></tr></thead>
+                  <tbody>${evidence.map((e: any) => `<tr><td>${escapeHtml(e.claim)}</td><td class="mono">${escapeHtml(e.value_text)}</td><td>${badge(e.confidence)}</td></tr>`).join("")}</tbody>
+                </table></div>`
+          }
         </div>
       </div>
 
       <div style="display:flex;flex-direction:column;gap:1rem;">
         <div class="card">
           <h3 style="font-size:.85rem;margin-bottom:.4rem;">Recommended action</h3>
-          <p style="margin:0;font-size:.85rem;color:var(--ink-secondary);">${unlock ? escapeHtml((unlock.content as any).recommendedAction) : "Unlock deep intelligence for a synthesised recommendation."}</p>
+          <p style="margin:0;font-size:.85rem;color:var(--ink-secondary);">${unlock ? escapeHtml((unlock.content as any).recommendedAction) : "Unlock this opportunity for a synthesised recommendation."}</p>
         </div>
       </div>
     </div>
   `;
   return layout(o.title, body, nav);
+}
+
+function lockedFact(label = "Unlock to view"): string {
+  return `<span style="color:var(--ink-muted);">🔒 ${escapeHtml(label)}</span>`;
+}
+
+function unlockCard(opportunityId: string): string {
+  return `
+    <div class="card" style="border-color:var(--accent);">
+      <h3 style="font-size:.92rem;margin-bottom:.4rem;">Unlock the full opportunity</h3>
+      <p style="font-size:.85rem;color:var(--ink-secondary);margin:0 0 .6rem;">You're seeing the teaser — fit score and commercial upside. Unlock for 1 credit to reveal:</p>
+      <ul style="margin:0 0 .8rem;padding-left:1.1rem;font-size:.83rem;color:var(--ink-secondary);">
+        <li>The deadline, contract value and a link to the live source notice</li>
+        <li>The full six-factor match breakdown</li>
+        <li>Everything extracted from the source text, with the source evidence trail</li>
+        <li>A synthesised recommendation and next action</li>
+      </ul>
+      <form method="post" action="/opportunities/${opportunityId}/unlock">
+        <button class="btn" type="submit">Unlock this opportunity (1 credit)</button>
+      </form>
+    </div>
+  `;
 }
 
 function matchBreakdown(m: any): string {
@@ -139,15 +170,6 @@ function commercialSection(c: any): string {
     ${c.estimated_contribution !== null ? `<div class="fact"><span class="fact__label">Contribution</span><span class="fact__value mono">${fmtGBP(Number(c.estimated_contribution))}</span></div>` : ""}
     ${c.estimated_margin_pct !== null ? `<div class="fact"><span class="fact__label">Margin</span><span class="fact__value mono">${c.estimated_margin_pct}%</span></div>` : ""}
     <p style="font-size:.78rem;color:var(--ink-muted);margin:.5rem 0 0;">${escapeHtml(c.note)}</p>
-  `;
-}
-
-function lockedPrompt(opportunityId: string): string {
-  return `
-    <p style="font-size:.85rem;color:var(--ink-secondary);">Unlock a synthesised recommendation and the full evidence trail for 1 credit.</p>
-    <form method="post" action="/opportunities/${opportunityId}/unlock">
-      <button class="btn" type="submit">Unlock deep intelligence (1 credit)</button>
-    </form>
   `;
 }
 

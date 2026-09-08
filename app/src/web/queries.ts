@@ -13,6 +13,7 @@ export interface OpportunityListItem {
   negativeFactors: string[];
   estimatedRevenue: number | null;
   revenueBasis: string;
+  isUnlocked: boolean;
 }
 
 export interface ListFilters {
@@ -42,11 +43,13 @@ export async function listOpportunities(businessId: string, filters: ListFilters
     const { rows } = await client.query(
       `select o.id as opportunity_id, o.status, p.title, p.buyer_name, p.location_text, p.deadline, p.source_url,
               m.total_score, m.positive_factors, m.negative_factors,
-              ce.estimated_revenue, ce.revenue_basis
+              ce.estimated_revenue, ce.revenue_basis,
+              (iu.opportunity_id is not null) as is_unlocked
        from opportunities o
        join procurement p on p.id = o.procurement_id
        join matches m on m.opportunity_id = o.id
        left join commercial_estimates ce on ce.opportunity_id = o.id
+       left join intelligence_unlocks iu on iu.opportunity_id = o.id and iu.business_id = o.business_id
        where ${conditions.join(" and ")}
        order by m.total_score desc`,
       params,
@@ -65,6 +68,7 @@ export async function listOpportunities(businessId: string, filters: ListFilters
       negativeFactors: r.negative_factors,
       estimatedRevenue: r.estimated_revenue !== null ? Number(r.estimated_revenue) : null,
       revenueBasis: r.revenue_basis,
+      isUnlocked: r.is_unlocked,
     }));
   });
 }
