@@ -2,6 +2,8 @@
 
 *The CTO-level report requested for this phase. Written by inspecting the actual repository state, not assumption — see "Repository structure: now" below for exactly what exists today. Every sub-topic has its own detailed doc; this ties them together and gives the 14 outputs requested.*
 
+**Status update — this doc originally described Phase 1 (the real backend) as "not started yet." That's no longer true.** A real, working commercial vertical slice now exists in `app/` — live ingestion, deterministic matching/commercial engines, a credit-based unlock flow, and a web app, all exercised end-to-end against real UK procurement data. See `docs/architecture/04-implementation-status.md` for exactly what's real, what's tested, and what still needs a production Anthropic/Stripe/Supabase account to go further. The plan below is otherwise unchanged and still governs what comes after.
+
 ## 1. Recommended architecture
 
 ```
@@ -85,40 +87,48 @@ Full detail in `docs/architecture/03-ai-routing-strategy.md`. No routing gateway
 
 ## 10. Repository structure
 
-**Now** (confirmed by direct inspection at the start of this task):
+**Now** (Phase 1's vertical slice is real — see `docs/architecture/04-implementation-status.md`):
 ```
 CLAUDE.md
-.env.example                     (new)
-.mcp.json                        (new)
-.claude/agents/                  (new — 4 dev-tooling subagents)
+.env.example
+.mcp.json
+.claude/agents/          4 dev-tooling subagents
 docs/
   EXECUTIVE_SUMMARY.md
   ENVIRONMENT_SETUP.md
-  research/            (7 files — Phase 1-4 research, pre-existing)
-  business/             (new)
-  product/              (new)
-  architecture/         (new — this doc + 3 supporting docs)
-  agents/               (new)
-  operations/           (new)
-  security/             (new)
-  marketing/             (new)
-  sales/                (new)
+  research/              7 files — Phase 1-4 research
+  business/, product/    vision and module sequencing
+  architecture/          this doc + 6 supporting docs (tooling audit, AI
+                          routing, data reuse, implementation status,
+                          schema reference, validation plan)
+  agents/, operations/, security/, marketing/, sales/
 prototype/
-  fleet-radar.html      (pre-existing — static demo prototype)
-  README.md
+  fleet-radar.html        static demo prototype (superseded by app/ for
+                           real data, kept for its UX reference design)
+app/                       the real Groundline backend + web app
+  src/db/                 migrations (plain SQL, Supabase-portable),
+                           connection pools (service-role + RLS-scoped),
+                           tenant isolation helper
+  src/ingestion/           Find a Tender (OCDS) + planning.data.gov.uk,
+                           deterministic relevance filter, dedup/hashing
+  src/extraction/          real Claude-backed Extraction/Verification
+                           agents + honest manual-seed fallback + a
+                           mechanical source-span integrity checker
+  src/matching/            deterministic scoring engine (6 dimensions,
+                           gating, reproducible)
+  src/commercial/          deterministic revenue/cost/margin calculation
+  src/credits/             credit ledger (atomic debit, idempotent grants)
+  src/billing/             Stripe checkout + webhook (code-complete,
+                           untested live — no Stripe account)
+  src/intelligence/        deep-intelligence synthesis (Claude-backed +
+                           deterministic-template fallback)
+  src/analytics/           validation event tracking
+  src/web/                 Express app: auth, Discover, My Opportunities,
+                           opportunity detail, unlock, billing
+  test/                    20 tests (unit + real-DB integration), all passing
 ```
 
-**Target, once Phase 1 begins** (not built yet — documented so implementation has a target, per the brief's own "do not build yet" instruction for anything beyond this audit):
-```
-app/            — the real Groundline web application (framework TBD at
-                  Phase 1 kickoff; not decided prematurely here)
-supabase/
-  migrations/   — schema from docs/research/06-system-design.md
-  functions/    — scheduled ingestion workers, Extraction/Verification
-                  agent invocations
-tests/          — unit + integration, plus Playwright E2E driven by the
-                  playwright-tester subagent
-```
+This is real code, not a target — `npm test` and the ingestion/matching commands in `04-implementation-status.md` actually run against it.
 
 ## 11. Cost estimates
 
