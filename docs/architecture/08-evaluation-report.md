@@ -11,7 +11,7 @@
 | Intelligence synthesis | Real, hardened, with an honest deterministic-template fallback that now distinguishes *why* it fell back (`no_api_key` vs `api_error`) rather than conflating the two. |
 | Matching engine | **Fully operational, no AI dependency** — deterministic, exercised against 165 real opportunities (65 procurement notices + 100 planning signals). |
 | Commercial calculation | **Fully operational, no AI dependency.** |
-| Credit ledger / unlock flow | **Fully operational**, exercised live via Playwright against the real running app (see §13). |
+| Credit ledger / unlock flow | **Fully operational**, exercised live via Playwright against the real running app (see §11). |
 
 ## 2. Models used
 
@@ -92,13 +92,24 @@ Real `security-auditor` subagent pass against this phase's changes, per `docs/ag
 |---|---|---|---|
 | 1 | `ai_call_log` referenced `business_id` but had no Row Level Security policy — the same gap `0005_analytics_rls.sql` closed for `analytics_events` was not repeated for this new table. No live exploit today (only the RLS-bypassing service role writes to it), but a future tenant-scoped read would have leaked cross-business AI usage data. | Medium | `0008_ai_call_log_rls.sql` — same RLS pattern as every other tenant-referencing table. |
 | 2 | `opportunityDetail.ts` escaped the visible link *text* for `source_url` but not the `href` attribute itself — inconsistent with every other field on the page, and a real (if currently unexploited, since upstream IDs are typically clean) stored-attribute-injection path if an ingested notice ID ever contained a `"` character. | Low/Medium | One-line fix — `escapeHtml()` applied to the `href` too. |
-| 3 | The commercial calculation picked up a `quantity` requirement's tonnage regardless of whether the Extraction Agent had marked it `verified` or `inferred`, then always labelled the resulting revenue "Calculated" — presenting an AI inference as arithmetic on a stated fact if it ever fired (it hadn't yet, in the current real corpus — see §9's note that no case had inferred-confidence tonnage). | Low/Medium (provenance-labelling, not a data leak) | `run-matching.ts` now requires `confidence === "verified"` on the tonnage claim before it drives a calculated figure; an inferred-only tonnage correctly falls through to `calculateCommercial`'s existing "Unknown" branch. |
+| 3 | The commercial calculation picked up a `quantity` requirement's tonnage regardless of whether the Extraction Agent had marked it `verified` or `inferred`, then always labelled the resulting revenue "Calculated" — presenting an AI inference as arithmetic on a stated fact if it ever fired. Verified directly against the DB post-fix: the `commercial_estimates.revenue_basis` distribution (47 verified / 118 unknown) was identical before and after this fix, confirming no case in the current real corpus actually had inferred-confidence tonnage — this is a correctness fix for future/live-API data, not a change visible in today's output. | Low/Medium (provenance-labelling, not a data leak) | `run-matching.ts` now requires `confidence === "verified"` on the tonnage claim before it drives a calculated figure; an inferred-only tonnage correctly falls through to `calculateCommercial`'s existing "Unknown" branch. |
 
 Checked and confirmed clean (auditor's own words, condensed): prompt injection defences (both system prompts explicitly name and defuse the "ignore previous instructions" pattern; Verification Agent is an independent second check); no secrets in tracked source or client-rendered output; cross-user data access (`business_id` sourced only from the authenticated session, never from request params, on every route); credit manipulation (row-locked debit, idempotent unlock and Stripe-grant paths); SQL injection (parameterized queries throughout, no exception found); financial/outreach guardrails (no agent-initiated Stripe write exists; no outreach code exists at all); global error handler doesn't leak stack traces.
 
 A follow-up finding surfaced *while fixing* #3: the same unfiltered-confidence pattern exists in the matching engine's capacity-fit scorer (`scoring.ts`'s `extractTonnes`, used only for a 0–100 score component, not a customer-facing £ figure) — lower stakes, not fixed in this pass, noted here rather than silently left out of the record.
 
-## 11. Would a real haulage/aggregates business find this useful?
+## 11. Playwright evidence — full user journey, real running app
+
+Driven live against the actual Node/Express/Postgres app (not the static prototype) at `http://localhost:3000`, via `.claude/agents/playwright-tester.md`. Login → My Opportunities → Discover (incl. a live search: "footpath" correctly filtered 65 opportunities down to 3) → opportunity detail (deliberately picked a not-yet-unlocked one, cross-checked against `intelligence_unlocks`) → unlock → billing/transaction history. **All 7 steps passed.**
+
+- Credits decremented exactly as expected (8 → 7) on unlock, matching the billing page's transaction history to the second (`08/09/2026, 18:13:16 · intelligence_unlock · -1`).
+- The unlocked page correctly and visibly labelled `Synthesis method: deterministic-template` — confirming the no-key fallback path fires correctly rather than silently failing or fabricating a live-AI label.
+- Zero JavaScript console errors, zero page errors, zero failed application requests across all 6 pages (the only network failures were Google Fonts CDN blocks — an environment artifact, not an app bug).
+- **Analytics cross-checked directly against Postgres**, not assumed: `opportunity_viewed`, `match_viewed`, `opportunity_unlocked`, `intelligence_consumed`, and `recommended_action_viewed` all present with real timestamps inside the test window (18:13:02–18:13:16 UTC), tied to the exact opportunity ID unlocked — plus `search_performed` and `customer_returned`, beyond what was asked, further evidence the instrumentation is live rather than stubbed.
+
+Two representative screenshots kept as evidence: `docs/architecture/evidence/06-opportunity-unlocked.png` (full detail page — score breakdown, What we know/estimate, evidence table, honest "Unknown" commercial analysis since no tonnage was stated) and `docs/architecture/evidence/07-billing.png` (real transaction history, Stripe correctly shown as not configured rather than faked).
+
+## 12. Would a real haulage/aggregates business find this useful?
 
 Judged against the cases above, not against how impressive any AI narrative sounds:
 
@@ -107,7 +118,7 @@ Judged against the cases above, not against how impressive any AI narrative soun
 - **Case 20 (recycling)** is the most useful *negative* finding: a real business would likely disagree with the system's low score here, and that disagreement is exactly the kind of feedback the `feedback` table (already in the schema, not yet wired to a UI) exists to capture once real users are using this.
 - The honest answer to "would a real quarry/haulage business act on this": **on the current real corpus, the strongest single case (65/100, case 1) is a modest £75,000 gravel footpath job, not a transformative contract.** That is not a failure of the system — it is what the actual UK procurement landscape currently contains within 100 miles of a Midlands haulage yard, on this data source, in this time window. Whether that's a data-coverage problem (need planning-application data, need more sources) or a real reflection of the addressable market is precisely the open question `docs/EXECUTIVE_SUMMARY.md` already flagged and still needs real operator conversations to resolve.
 
-## 12. Remaining limitations (carried forward + new)
+## 13. Remaining limitations (carried forward + new)
 
 All limitations from `docs/architecture/04-implementation-status.md` still apply. New from this phase:
 - Live Extraction/Verification/Synthesis Agent behaviour is unverified against a real API key.
@@ -115,7 +126,7 @@ All limitations from `docs/architecture/04-implementation-status.md` still apply
 - No strong (≥70) real match exists yet in the sampled corpus for the seeded profile — worth a larger/more targeted ingestion pull before drawing product conclusions from score distribution.
 - Sub-lot/framework ambiguity (case 7) scores more generously than a human might judge fair — service_score treats one relevant line-item the same as a wholly-dedicated contract; worth a future refinement (e.g. a partial-match discount) once real user feedback exists to tune against.
 
-## 13. Specific changes required before customer trials
+## 14. Specific changes required before customer trials
 
 1. **Provision a production `ANTHROPIC_API_KEY`** and re-run the entire evaluation set through the live automated Extraction/Verification/Synthesis path — compare its output field-for-field against this session's manual extraction to establish real accuracy, cost, and latency figures (currently N/A).
 2. **Widen or diversify data ingestion** — the current real corpus doesn't yet contain a genuinely strong match for the validated beachhead profile; either accept that as a real market signal or expand sourcing (a second FTS pull strategy, or the planning-data aggregator option already costed in `docs/research/05-product-strategy.md`) before concluding anything from score distribution.
