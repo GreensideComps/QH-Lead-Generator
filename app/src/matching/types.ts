@@ -31,18 +31,30 @@ export interface RequirementRow {
   sourceSpan: string | null;
 }
 
-export interface ProcurementCandidate {
-  procurementId: string;
+/** Shared shape the deterministic scoring engine actually reads — either a
+ *  procurement notice or a planning signal can satisfy this, so the same
+ *  matching engine (not a second one) scores both, per the instruction not
+ *  to build duplicate systems. */
+export interface MatchableCandidate {
   title: string;
   description: string | null;
   buyerName: string | null;
   valueLow: number | null;
   valueHigh: number | null;
   locationText: string | null;
-  deadline: string | null;
   cpvCodes: string[];
   sourceUrl: string;
   requirements: RequirementRow[];
+}
+
+export interface ProcurementCandidate extends MatchableCandidate {
+  procurementId: string;
+  deadline: string | null;
+}
+
+export interface PlanningCandidate extends MatchableCandidate {
+  planningSignalId: string;
+  dataset: string;
 }
 
 export interface ScoreComponent {
@@ -55,7 +67,7 @@ export interface ScoreComponent {
 export interface MatchResult {
   service: ScoreComponent;
   fleet: ScoreComponent;
-  geography: ScoreComponent;
+  geography: ScoreComponent & { distanceMiles: number | null };
   capacity: ScoreComponent;
   commercial: ScoreComponent;
   sector: ScoreComponent;

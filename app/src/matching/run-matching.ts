@@ -1,18 +1,24 @@
 import { servicePool } from "../db/pool.js";
 import { computeMatch } from "./scoring.js";
 import { calculateCommercial } from "../commercial/calculate.js";
-import { primaryPlaceName, geocodePlace, haversineMiles } from "../lib/geocode.js";
-import type { BusinessProfileForMatching, ProcurementCandidate } from "./types.js";
+import { normalizePlanningSignals } from "./planningNormalize.js";
+import type { BusinessProfileForMatching, MatchableCandidate } from "./types.js";
 
 /**
  * Batch job: computes matches for every business against every ingested
- * procurement notice. Run as a backend job (service-role connection,
- * scoped explicitly by business_id in each query) — not a live per-request
- * path, so this does not go through withTenant/RLS. See
- * docs/security/00-security-architecture.md for why this split is
- * deliberate, and src/web/routes for the RLS-scoped live paths.
+ * procurement notice AND planning signal — one shared deterministic scoring
+ * path for both (src/matching/scoring.ts), not two separate systems.
+ * Service-role connection, scoped explicitly by business_id in each query —
+ * not a live per-request path, so this does not go through withTenant/RLS.
+ * See docs/security/00-security-architecture.md for why that split is
+ * deliberate.
  */
 async function main() {
+  const planningResult = await normalizePlanningSignals();
+  if (planningResult.processed > 0) {
+    console.log(`Normalised ${planningResult.processed} planning signal(s) into known facts.`);
+  }
+
   const { rows: businesses } = await servicePool.query(`
     select b.id as business_id, bp.services, bp.fleet, bp.base_location,
            bp.operating_radius_miles, bp.capacity_available, bp.min_opportunity_value,
@@ -24,6 +30,11 @@ async function main() {
     select id, title, description, buyer_name, value_low, value_high,
            location_text, deadline, cpv_codes, source_url
     from procurement
+  `);
+
+  const { rows: planningSignals } = await servicePool.query(`
+    select id, name, dataset, location_text, organisation, source_url
+    from planning_signals
   `);
 
   let created = 0;
@@ -43,155 +54,207 @@ async function main() {
     };
 
     for (const notice of notices) {
-      const { rows: reqRows } = await servicePool.query(
-        `select field_name, value_text, confidence, source_span from requirements where procurement_id = $1`,
-        [notice.id],
-      );
-
-      const candidate: ProcurementCandidate = {
-        procurementId: notice.id,
+      const requirements = await loadRequirements("procurement_id", notice.id);
+      const candidate: MatchableCandidate = {
         title: notice.title,
         description: notice.description,
         buyerName: notice.buyer_name,
         valueLow: notice.value_low !== null ? Number(notice.value_low) : null,
         valueHigh: notice.value_high !== null ? Number(notice.value_high) : null,
         locationText: notice.location_text,
-        deadline: notice.deadline,
         cpvCodes: notice.cpv_codes,
         sourceUrl: notice.source_url,
-        requirements: reqRows.map((r) => ({
-          fieldName: r.field_name,
-          valueText: r.value_text,
-          confidence: r.confidence,
-          sourceSpan: r.source_span,
-        })),
+        requirements,
       };
+      const result = await matchOneOpportunity(profile, candidate, { procurementId: notice.id });
+      result.created ? (created += 1) : (updated += 1);
+    }
 
-      const match = await computeMatch(profile, candidate);
-
-      // upsert opportunity
-      const oppRes = await servicePool.query(
-        `insert into opportunities (business_id, procurement_id)
-         values ($1, $2)
-         on conflict do nothing
-         returning id`,
-        [profile.businessId, notice.id],
-      );
-      let opportunityId: string;
-      if (oppRes.rowCount) {
-        opportunityId = oppRes.rows[0].id;
-        created += 1;
-      } else {
-        const existing = await servicePool.query(
-          `select id from opportunities where business_id = $1 and procurement_id = $2`,
-          [profile.businessId, notice.id],
-        );
-        opportunityId = existing.rows[0].id;
-        updated += 1;
-      }
-
-      await servicePool.query(
-        `insert into matches
-           (opportunity_id, service_score, fleet_score, geography_score, capacity_score,
-            commercial_score, sector_score, total_score, weights_used,
-            positive_factors, negative_factors, unknown_factors, computed_at)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
-         on conflict (opportunity_id) do update set
-           service_score = excluded.service_score, fleet_score = excluded.fleet_score,
-           geography_score = excluded.geography_score, capacity_score = excluded.capacity_score,
-           commercial_score = excluded.commercial_score, sector_score = excluded.sector_score,
-           total_score = excluded.total_score, weights_used = excluded.weights_used,
-           positive_factors = excluded.positive_factors, negative_factors = excluded.negative_factors,
-           unknown_factors = excluded.unknown_factors, computed_at = now()`,
-        [
-          opportunityId,
-          match.service.score,
-          match.fleet.score,
-          match.geography.score,
-          match.capacity.score,
-          match.commercial.score,
-          match.sector.score,
-          match.totalScore,
-          JSON.stringify(match.weightsUsed),
-          match.positiveFactors,
-          match.negativeFactors,
-          match.unknownFactors,
-        ],
-      );
-
-      // Commercial estimate — needs tonnage (from requirements) and distance (recompute via geocode)
-      const tonnesReq = candidate.requirements.find((r) => r.fieldName === "quantity");
-      const tonnesMatch = tonnesReq?.valueText.match(/([\d,]+(?:\.\d+)?)\s*(?:tonnes|tonne)/i);
-      const tonnes = tonnesMatch ? Number(tonnesMatch[1].replace(/,/g, "")) : null;
-
-      const placeName = primaryPlaceName(candidate.locationText);
-      let distanceMiles: number | null = null;
-      if (placeName && profile.baseLocation) {
-        const [basePoint, oppPoint] = await Promise.all([geocodePlace(profile.baseLocation), geocodePlace(placeName)]);
-        if (basePoint && oppPoint) distanceMiles = haversineMiles(basePoint, oppPoint);
-      }
-
-      const commercial = calculateCommercial({
-        tonnes,
-        distanceMiles,
-        valueLow: candidate.valueLow,
-        valueHigh: candidate.valueHigh,
-        rates: profile.rates,
-      });
-
-      await servicePool.query(
-        `insert into commercial_estimates
-           (opportunity_id, estimated_loads, estimated_revenue, estimated_cost,
-            estimated_contribution, estimated_margin_pct, revenue_basis, rate_inputs_used, note, computed_at)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
-         on conflict (opportunity_id) do update set
-           estimated_loads = excluded.estimated_loads, estimated_revenue = excluded.estimated_revenue,
-           estimated_cost = excluded.estimated_cost, estimated_contribution = excluded.estimated_contribution,
-           estimated_margin_pct = excluded.estimated_margin_pct, revenue_basis = excluded.revenue_basis,
-           rate_inputs_used = excluded.rate_inputs_used, note = excluded.note, computed_at = now()`,
-        [
-          opportunityId,
-          commercial.estimatedLoads,
-          commercial.estimatedRevenue,
-          commercial.estimatedCost,
-          commercial.estimatedContribution,
-          commercial.estimatedMarginPct,
-          commercial.revenueBasis,
-          JSON.stringify(profile.rates),
-          commercial.note,
-        ],
-      );
-
-      // Evidence — one row per requirement (copies extraction provenance) plus
-      // the commercial estimate's own basis, so the opportunity detail page
-      // has a single place to read every claim's provenance from.
-      await servicePool.query(`delete from evidence where opportunity_id = $1`, [opportunityId]);
-      for (const req of candidate.requirements) {
-        await servicePool.query(
-          `insert into evidence (opportunity_id, claim, value_text, confidence, source_type, source_url, source_span)
-           values ($1,$2,$3,$4,'procurement_notice',$5,$6)`,
-          [opportunityId, req.fieldName, req.valueText, req.confidence, candidate.sourceUrl, req.sourceSpan],
-        );
-      }
-      if (candidate.valueLow !== null) {
-        await servicePool.query(
-          `insert into evidence (opportunity_id, claim, value_text, confidence, source_type, source_url)
-           values ($1,'contract_value',$2,'verified','procurement_notice',$3)`,
-          [opportunityId, `£${candidate.valueLow.toLocaleString()}${candidate.valueHigh && candidate.valueHigh !== candidate.valueLow ? ` - £${candidate.valueHigh.toLocaleString()}` : ""}`, candidate.sourceUrl],
-        );
-      }
-      if (distanceMiles !== null) {
-        await servicePool.query(
-          `insert into evidence (opportunity_id, claim, value_text, confidence, source_type)
-           values ($1,'distance_from_base',$2,'calculated','geocoding')`,
-          [opportunityId, `${Math.round(distanceMiles)} miles`],
-        );
-      }
+    for (const signal of planningSignals) {
+      const requirements = await loadRequirements("planning_signal_id", signal.id);
+      const candidate: MatchableCandidate = {
+        title: `Planning signal: ${signal.name ?? signal.dataset} (${signal.organisation ?? "unknown organisation"})`,
+        // Requirements carry the actual structured facts (dwelling count, permission
+        // status, notes) — the "description" here is deliberately thin since planning
+        // signals have no free-text notice body the way a procurement notice does.
+        description: `Brownfield land register entry, dataset: ${signal.dataset}.`,
+        buyerName: signal.organisation,
+        valueLow: null, // planning signals never carry a monetary value — never invent one
+        valueHigh: null,
+        locationText: signal.location_text,
+        cpvCodes: [],
+        sourceUrl: signal.source_url,
+        requirements,
+      };
+      const result = await matchOneOpportunity(profile, candidate, { planningSignalId: signal.id });
+      result.created ? (created += 1) : (updated += 1);
     }
   }
 
   console.log(`Matching complete. ${created} new opportunity link(s), ${updated} re-scored.`);
   await servicePool.end();
+}
+
+async function loadRequirements(column: "procurement_id" | "planning_signal_id", id: string) {
+  const { rows } = await servicePool.query(
+    `select field_name, value_text, confidence, source_span from requirements where ${column} = $1`,
+    [id],
+  );
+  return rows.map((r) => ({
+    fieldName: r.field_name,
+    valueText: r.value_text,
+    confidence: r.confidence,
+    sourceSpan: r.source_span,
+  }));
+}
+
+async function matchOneOpportunity(
+  profile: BusinessProfileForMatching,
+  candidate: MatchableCandidate,
+  source: { procurementId?: string; planningSignalId?: string },
+): Promise<{ created: boolean }> {
+  const match = await computeMatch(profile, candidate);
+
+  const oppRes = await servicePool.query(
+    `insert into opportunities (business_id, procurement_id, planning_signal_id)
+     values ($1, $2, $3)
+     on conflict do nothing
+     returning id`,
+    [profile.businessId, source.procurementId ?? null, source.planningSignalId ?? null],
+  );
+  let opportunityId: string;
+  let created = false;
+  if (oppRes.rowCount) {
+    opportunityId = oppRes.rows[0].id;
+    created = true;
+  } else {
+    const existing = await servicePool.query(
+      source.procurementId
+        ? `select id from opportunities where business_id = $1 and procurement_id = $2`
+        : `select id from opportunities where business_id = $1 and planning_signal_id = $2`,
+      [profile.businessId, source.procurementId ?? source.planningSignalId],
+    );
+    opportunityId = existing.rows[0].id;
+  }
+
+  await servicePool.query(
+    `insert into matches
+       (opportunity_id, service_score, fleet_score, geography_score, capacity_score,
+        commercial_score, sector_score, total_score, weights_used,
+        positive_factors, negative_factors, unknown_factors, computed_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
+     on conflict (opportunity_id) do update set
+       service_score = excluded.service_score, fleet_score = excluded.fleet_score,
+       geography_score = excluded.geography_score, capacity_score = excluded.capacity_score,
+       commercial_score = excluded.commercial_score, sector_score = excluded.sector_score,
+       total_score = excluded.total_score, weights_used = excluded.weights_used,
+       positive_factors = excluded.positive_factors, negative_factors = excluded.negative_factors,
+       unknown_factors = excluded.unknown_factors, computed_at = now()`,
+    [
+      opportunityId,
+      match.service.score,
+      match.fleet.score,
+      match.geography.score,
+      match.capacity.score,
+      match.commercial.score,
+      match.sector.score,
+      match.totalScore,
+      JSON.stringify(match.weightsUsed),
+      match.positiveFactors,
+      match.negativeFactors,
+      match.unknownFactors,
+    ],
+  );
+
+  // Commercial estimate — needs tonnage (from requirements) and distance.
+  // Distance is reused from the match's own geography scoring (computeMatch,
+  // above) rather than recomputed — previously this ran a second, redundant
+  // geocode round-trip for the same two points.
+  //
+  // Security-audit finding (docs/architecture/08-evaluation-report.md §10):
+  // only a 'verified' tonnage claim (directly quoted from the source) may
+  // drive a calculated commercial figure — an 'inferred' tonnage is the
+  // Extraction Agent's own judgement call, and letting it silently produce
+  // a "Calculated" revenue badge would present an AI inference as if it
+  // were arithmetic on a stated fact. An inferred-only tonnage now falls
+  // through to calculateCommercial's existing "no tonnage" branch, which
+  // correctly returns Unknown rather than a confident-looking number.
+  const tonnesReq = candidate.requirements.find((r) => r.fieldName === "quantity" && r.confidence === "verified");
+  const tonnesMatch = tonnesReq?.valueText.match(/([\d,]+(?:\.\d+)?)\s*(?:tonnes|tonne)/i);
+  const tonnes = tonnesMatch ? Number(tonnesMatch[1].replace(/,/g, "")) : null;
+
+  const distanceMiles = match.geography.distanceMiles;
+
+  const commercial = calculateCommercial({
+    tonnes,
+    distanceMiles,
+    valueLow: candidate.valueLow,
+    valueHigh: candidate.valueHigh,
+    rates: profile.rates,
+  });
+
+  await servicePool.query(
+    `insert into commercial_estimates
+       (opportunity_id, estimated_loads, estimated_revenue, estimated_cost,
+        estimated_contribution, estimated_margin_pct, revenue_basis, rate_inputs_used, note, computed_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
+     on conflict (opportunity_id) do update set
+       estimated_loads = excluded.estimated_loads, estimated_revenue = excluded.estimated_revenue,
+       estimated_cost = excluded.estimated_cost, estimated_contribution = excluded.estimated_contribution,
+       estimated_margin_pct = excluded.estimated_margin_pct, revenue_basis = excluded.revenue_basis,
+       rate_inputs_used = excluded.rate_inputs_used, note = excluded.note, computed_at = now()`,
+    [
+      opportunityId,
+      commercial.estimatedLoads,
+      commercial.estimatedRevenue,
+      commercial.estimatedCost,
+      commercial.estimatedContribution,
+      commercial.estimatedMarginPct,
+      commercial.revenueBasis,
+      JSON.stringify(profile.rates),
+      commercial.note,
+    ],
+  );
+
+  // Evidence — one row per requirement (copies extraction provenance) plus
+  // the commercial estimate's own basis, so the opportunity detail page has
+  // a single place to read every claim's provenance from.
+  await servicePool.query(`delete from evidence where opportunity_id = $1`, [opportunityId]);
+  for (const req of candidate.requirements) {
+    await servicePool.query(
+      `insert into evidence (opportunity_id, claim, value_text, confidence, source_type, source_url, source_span)
+       values ($1,$2,$3,$4,$5,$6,$7)`,
+      [
+        opportunityId,
+        req.fieldName,
+        req.valueText,
+        req.confidence,
+        source.procurementId ? "procurement_notice" : "planning_signal",
+        candidate.sourceUrl,
+        req.sourceSpan,
+      ],
+    );
+  }
+  if (candidate.valueLow !== null) {
+    await servicePool.query(
+      `insert into evidence (opportunity_id, claim, value_text, confidence, source_type, source_url)
+       values ($1,'contract_value',$2,'verified','procurement_notice',$3)`,
+      [
+        opportunityId,
+        `£${candidate.valueLow.toLocaleString()}${candidate.valueHigh && candidate.valueHigh !== candidate.valueLow ? ` - £${candidate.valueHigh.toLocaleString()}` : ""}`,
+        candidate.sourceUrl,
+      ],
+    );
+  }
+  if (distanceMiles !== null) {
+    await servicePool.query(
+      `insert into evidence (opportunity_id, claim, value_text, confidence, source_type)
+       values ($1,'distance_from_base',$2,'calculated','geocoding')`,
+      [opportunityId, `${Math.round(distanceMiles)} miles`],
+    );
+  }
+
+  return { created };
 }
 
 main();

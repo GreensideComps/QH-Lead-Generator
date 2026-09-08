@@ -41,7 +41,7 @@ export function renderOpportunityDetail(nav: NavContext, data: DetailData): stri
             </div>
             <div>
               <span class="pill pill--${band.cls}">${band.label}</span>
-              <div style="font-size:.78rem;color:var(--ink-muted);margin-top:.3rem;">Source: <a href="${o.source_url}" target="_blank" rel="noopener">${escapeHtml(o.source_url)}</a></div>
+              <div style="font-size:.78rem;color:var(--ink-muted);margin-top:.3rem;">Source: <a href="${escapeHtml(o.source_url)}" target="_blank" rel="noopener">${escapeHtml(o.source_url)}</a></div>
             </div>
           </div>
           <div class="fact"><span class="fact__label">Deadline</span><span class="fact__value mono">${o.deadline ?? "Not stated"}</span></div>

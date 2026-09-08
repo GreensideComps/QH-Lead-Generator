@@ -16,3 +16,6 @@ build/
 # OS / editor
 .DS_Store
 *.log
+
+# Local dev tooling (graphify knowledge-graph builder — machine-specific sidecar files)
+graphify-out/

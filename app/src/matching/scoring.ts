@@ -2,7 +2,7 @@ import { geocodePlace, haversineMiles, primaryPlaceName } from "../lib/geocode.j
 import type {
   BusinessProfileForMatching,
   MatchResult,
-  ProcurementCandidate,
+  MatchableCandidate,
   ScoreComponent,
 } from "./types.js";
 
@@ -50,12 +50,12 @@ const SECTOR_SIGNALS: Record<string, { cpvPrefixes: string[]; keywords: string[]
   Earthworks: { cpvPrefixes: ["45111", "45112"], keywords: ["earthworks", "groundworks", "excavation", "cut and fill"] },
 };
 
-function textOf(candidate: ProcurementCandidate): string {
+function textOf(candidate: MatchableCandidate): string {
   const reqText = candidate.requirements.map((r) => r.valueText).join(" ");
   return `${candidate.title} ${candidate.description ?? ""} ${reqText}`.toLowerCase();
 }
 
-function scoreService(profile: BusinessProfileForMatching, candidate: ProcurementCandidate): ScoreComponent {
+function scoreService(profile: BusinessProfileForMatching, candidate: MatchableCandidate): ScoreComponent {
   const text = textOf(candidate);
   const matched: string[] = [];
   for (const service of profile.services) {
@@ -79,7 +79,7 @@ function scoreService(profile: BusinessProfileForMatching, candidate: Procuremen
   };
 }
 
-function scoreFleet(profile: BusinessProfileForMatching, candidate: ProcurementCandidate): ScoreComponent {
+function scoreFleet(profile: BusinessProfileForMatching, candidate: MatchableCandidate): ScoreComponent {
   const text = textOf(candidate);
   const matched: string[] = [];
   for (const line of profile.fleet) {
@@ -103,7 +103,7 @@ function scoreFleet(profile: BusinessProfileForMatching, candidate: ProcurementC
   };
 }
 
-async function scoreGeography(profile: BusinessProfileForMatching, candidate: ProcurementCandidate): Promise<ScoreComponent & { distanceMiles: number | null }> {
+async function scoreGeography(profile: BusinessProfileForMatching, candidate: MatchableCandidate): Promise<ScoreComponent & { distanceMiles: number | null }> {
   if (!profile.baseLocation || !profile.operatingRadiusMiles) {
     return { score: 50, factors: [], negatives: [], unknowns: ["Business base location or operating radius not set"], distanceMiles: null };
   }
@@ -141,7 +141,7 @@ async function scoreGeography(profile: BusinessProfileForMatching, candidate: Pr
   };
 }
 
-function extractTonnes(candidate: ProcurementCandidate): number | null {
+function extractTonnes(candidate: MatchableCandidate): number | null {
   const text = textOf(candidate);
   const match = text.match(/([\d,]+(?:\.\d+)?)\s*(?:tonnes|tonne|t\b)/i);
   if (!match) return null;
@@ -149,7 +149,7 @@ function extractTonnes(candidate: ProcurementCandidate): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
-function scoreCapacity(profile: BusinessProfileForMatching, candidate: ProcurementCandidate): ScoreComponent {
+function scoreCapacity(profile: BusinessProfileForMatching, candidate: MatchableCandidate): ScoreComponent {
   const tonnes = extractTonnes(candidate);
   if (tonnes === null || !profile.capacityAvailable || !profile.rates.payload) {
     return { score: 50, factors: [], negatives: [], unknowns: ["No stated tonnage/scale to compare against your available capacity"] };
@@ -161,7 +161,7 @@ function scoreCapacity(profile: BusinessProfileForMatching, candidate: Procureme
   return { score: 40, factors: [], negatives: [`Estimated vehicle requirement (~${Math.ceil(estimatedVehicleDays)} vehicle-days) exceeds your currently available capacity`], unknowns: [] };
 }
 
-function scoreCommercial(profile: BusinessProfileForMatching, candidate: ProcurementCandidate): ScoreComponent {
+function scoreCommercial(profile: BusinessProfileForMatching, candidate: MatchableCandidate): ScoreComponent {
   const value = candidate.valueLow ?? candidate.valueHigh;
   if (value === null || !profile.minOpportunityValue) {
     return { score: 50, factors: [], negatives: [], unknowns: ["No contract value stated in this notice"] };
@@ -174,7 +174,7 @@ function scoreCommercial(profile: BusinessProfileForMatching, candidate: Procure
   return { score, factors: [`Value (£${value.toLocaleString()}) is above your stated minimum of £${profile.minOpportunityValue.toLocaleString()}`], negatives: [], unknowns: [] };
 }
 
-function scoreSector(profile: BusinessProfileForMatching, candidate: ProcurementCandidate): ScoreComponent {
+function scoreSector(profile: BusinessProfileForMatching, candidate: MatchableCandidate): ScoreComponent {
   const text = textOf(candidate);
   const matched: string[] = [];
   for (const sector of profile.preferredSectors) {
@@ -192,7 +192,7 @@ function scoreSector(profile: BusinessProfileForMatching, candidate: Procurement
 
 export async function computeMatch(
   profile: BusinessProfileForMatching,
-  candidate: ProcurementCandidate,
+  candidate: MatchableCandidate,
   weights: Record<string, number> = DEFAULT_WEIGHTS,
 ): Promise<MatchResult> {
   const service = scoreService(profile, candidate);

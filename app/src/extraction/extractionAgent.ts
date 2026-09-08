@@ -1,83 +1,83 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { EXTRACTION_SYSTEM_PROMPT, VERIFICATION_SYSTEM_PROMPT } from "./prompts.js";
+import { callClaude, logInvalidResponse, ClaudeCallError } from "../lib/claudeClient.js";
+import { ExtractionResponseSchema, VerificationResponseSchema, type ExtractedField, type VerifiedField } from "./schemas.js";
 
-export interface ExtractedField {
-  field_name: string;
-  value: string;
-  confidence: "verified" | "inferred" | "unknown";
-  source_span: string | null;
-}
-
-export interface VerifiedField extends ExtractedField {
-  verification_note?: string;
-}
+export type { ExtractedField, VerifiedField } from "./schemas.js";
 
 /**
  * Real, callable Extraction Agent — Claude, mid tier, per
- * docs/architecture/03-ai-routing-strategy.md. Requires ANTHROPIC_API_KEY.
- *
- * When no key is configured (true in this sandbox — see
- * docs/architecture/04-implementation-status.md), this throws rather than
- * silently returning fabricated data. Callers (run-extraction.ts) must
- * handle that by skipping the notice and logging it, never by inventing
- * a result.
+ * docs/architecture/03-ai-routing-strategy.md. Requires ANTHROPIC_API_KEY
+ * (ClaudeNotConfiguredError otherwise — see src/lib/claudeClient.ts).
+ * Every response is schema-validated (schemas.ts) before being trusted;
+ * a response that doesn't match the expected shape is logged as
+ * 'invalid_response' and rejected, never coerced or partially accepted.
  */
-export async function runExtraction(title: string, description: string): Promise<{ fields: ExtractedField[]; notes: string }> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY not configured — cannot run live extraction");
-  }
-  const client = new Anthropic({ apiKey });
-
-  const message = await client.messages.create({
-    model: "claude-sonnet-4-5",
-    max_tokens: 1024,
+export async function runExtraction(
+  title: string,
+  description: string,
+  context?: { procurementId?: string },
+): Promise<{ fields: ExtractedField[]; notes: string; model: string }> {
+  const result = await callClaude({
+    task: "extraction",
     system: EXTRACTION_SYSTEM_PROMPT,
-    messages: [
-      {
-        role: "user",
-        content: `Notice title: ${title}\n\nNotice description:\n${description || "(no description provided)"}`,
-      },
-    ],
+    userContent: `Notice title: ${title}\n\nNotice description:\n${description || "(no description provided)"}`,
+    maxTokens: 1024,
+    context,
   });
 
-  const text = message.content.find((b) => b.type === "text")?.text ?? "{}";
-  return JSON.parse(extractJson(text));
+  const parsed = safeParseJson(result.text);
+  const validated = ExtractionResponseSchema.safeParse(parsed);
+  if (!validated.success) {
+    await logInvalidResponse(
+      { task: "extraction", system: EXTRACTION_SYSTEM_PROMPT, userContent: "", maxTokens: 0, context },
+      result.model,
+      validated.error.message,
+    );
+    throw new ClaudeCallError(`Extraction response failed schema validation: ${validated.error.message}`);
+  }
+
+  return { ...validated.data, model: result.model };
 }
 
 /**
  * Real, callable Verification Agent — independent second pass, per
- * docs/research/06-system-design.md. Same key requirement as above.
+ * docs/research/06-system-design.md. Same key requirement and validation
+ * discipline as runExtraction.
  */
 export async function runVerification(
   originalText: string,
   claimedFields: ExtractedField[],
-): Promise<{ verified_fields: VerifiedField[] }> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY not configured — cannot run live verification");
-  }
-  const client = new Anthropic({ apiKey });
-
-  const message = await client.messages.create({
-    model: "claude-sonnet-4-5",
-    max_tokens: 1024,
+  context?: { procurementId?: string },
+): Promise<{ verified_fields: VerifiedField[]; model: string }> {
+  const result = await callClaude({
+    task: "verification",
     system: VERIFICATION_SYSTEM_PROMPT,
-    messages: [
-      {
-        role: "user",
-        content: `Original notice text:\n${originalText}\n\nClaimed fields:\n${JSON.stringify(claimedFields, null, 2)}`,
-      },
-    ],
+    userContent: `Original notice text:\n${originalText}\n\nClaimed fields:\n${JSON.stringify(claimedFields, null, 2)}`,
+    maxTokens: 1024,
+    context,
   });
 
-  const text = message.content.find((b) => b.type === "text")?.text ?? "{}";
-  return JSON.parse(extractJson(text));
+  const parsed = safeParseJson(result.text);
+  const validated = VerificationResponseSchema.safeParse(parsed);
+  if (!validated.success) {
+    await logInvalidResponse(
+      { task: "verification", system: VERIFICATION_SYSTEM_PROMPT, userContent: "", maxTokens: 0, context },
+      result.model,
+      validated.error.message,
+    );
+    throw new ClaudeCallError(`Verification response failed schema validation: ${validated.error.message}`);
+  }
+
+  return { ...validated.data, model: result.model };
 }
 
-function extractJson(text: string): string {
+function safeParseJson(text: string): unknown {
   // Claude sometimes wraps JSON in prose or a fenced code block; take the
   // outermost {...} block defensively rather than assuming a bare JSON reply.
   const match = text.match(/\{[\s\S]*\}/);
-  return match ? match[0] : "{}";
+  try {
+    return JSON.parse(match ? match[0] : "{}");
+  } catch {
+    return {};
+  }
 }

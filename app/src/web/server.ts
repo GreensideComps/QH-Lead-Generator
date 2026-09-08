@@ -142,24 +142,28 @@ app.post("/opportunities/:id/unlock", requireAuth, async (req, res) => {
     return;
   }
 
-  const synthesis = await synthesizeIntelligence({
-    title: data.opportunity.title,
-    buyerName: data.opportunity.buyer_name,
-    description: data.opportunity.description,
-    matchFactors: {
-      positive: data.match.positive_factors,
-      negative: data.match.negative_factors,
-      unknown: data.match.unknown_factors,
+  const synthesis = await synthesizeIntelligence(
+    {
+      title: data.opportunity.title,
+      buyerName: data.opportunity.buyer_name,
+      description: data.opportunity.description,
+      matchFactors: {
+        positive: data.match.positive_factors,
+        negative: data.match.negative_factors,
+        unknown: data.match.unknown_factors,
+      },
+      commercialNote: data.commercial?.note ?? "No commercial estimate available.",
+      requirements: data.requirements.map((r: any) => ({ field: r.field_name, value: r.value_text, confidence: r.confidence })),
     },
-    commercialNote: data.commercial?.note ?? "No commercial estimate available.",
-    requirements: data.requirements.map((r: any) => ({ field: r.field_name, value: r.value_text, confidence: r.confidence })),
-  });
+    { opportunityId, businessId: user.businessId },
+  );
 
   try {
     await debitForUnlock(user.businessId, opportunityId, {
       narrative: synthesis.narrative,
       recommendedAction: synthesis.recommendedAction,
       method: synthesis.method,
+      fallbackReason: synthesis.fallbackReason ?? null,
     });
   } catch (err) {
     if (err instanceof InsufficientCreditsError) {
@@ -169,7 +173,10 @@ app.post("/opportunities/:id/unlock", requireAuth, async (req, res) => {
     throw err;
   }
 
-  await recordEvent(user.businessId, user.userId, "opportunity_unlocked", opportunityId, { method: synthesis.method });
+  await recordEvent(user.businessId, user.userId, "opportunity_unlocked", opportunityId, {
+    method: synthesis.method,
+    fallbackReason: synthesis.fallbackReason ?? null,
+  });
   await recordEvent(user.businessId, user.userId, "intelligence_consumed", opportunityId);
 
   res.redirect(`/opportunities/${opportunityId}`);
@@ -202,6 +209,18 @@ app.post("/billing/checkout", requireAuth, async (req, res) => {
     console.error("Checkout error:", err);
     res.status(500).send("Could not create checkout session.");
   }
+});
+
+// Global error handler — added per the AI-integration audit finding that no
+// route in this app previously caught an unexpected failure (e.g. a DB
+// outage, an unhandled Claude client error) before it fell through to
+// Express's default handler, which leaks stack traces in non-production
+// environments. Must be registered last, and must take all 4 params for
+// Express to recognise it as error-handling middleware.
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("Unhandled request error:", err);
+  if (res.headersSent) return;
+  res.status(500).send("Something went wrong. This has been logged.");
 });
 
 const port = Number(process.env.PORT ?? 3000);

@@ -191,6 +191,45 @@ const EXTRACTIONS: Record<string, { fields: SeedField[]; notes: string }> = {
     notes:
       "Genuine gravel-material removal/disposal job, but a small physical footprint (528 sq m) relative to the stated £80,000 value — the value likely includes drainage design/engineering and tarmac surfacing work beyond the haulage/removal element, not just material handling. Worth flagging to the customer rather than assuming the full £80,000 represents haulage-attributable revenue. No tonnage is stated, so the commercial calculation correctly falls back to the notice's own stated value rather than a calculated tonnage-based estimate.",
   },
+  "017791-2026": {
+    // Supply, Delivery & Collection of Roadstone Materials (Fife Council) —
+    // the clearest explicit aggregate/quarry-material requirement in this sample.
+    fields: [
+      {
+        field_name: "material_or_service",
+        value_text: "Supply of road stone materials and general quarry requirements — aggregates, dry and coated materials, ready mix concrete",
+        confidence: "verified",
+        source_span: "the supply of road stone materials and other general quarry requirements, which includes aggregates, dry and coated materials, as well as ready",
+      },
+      {
+        field_name: "geographic_information",
+        value_text: "Fife-wide — supplier access required across the whole of Fife, not a single site",
+        confidence: "verified",
+        source_span: "Roads Operations activities take place across Fife and cover a range of works, therefore access to a range of suppliers across",
+      },
+    ],
+    notes:
+      "Best real example of an explicit, unambiguous aggregate/quarry-material requirement in this ingestion sample — title and description both name aggregates and quarry materials directly, no incidental-keyword risk. £12.8m value is a multi-year term contract for a whole council area, not a single delivery — a customer should be told this is a framework-scale opportunity, not a one-off job.",
+  },
+  "064119-2025": {
+    // Extension of the Kenn Hedge Footpath (North Somerset) — gravel material, real
+    fields: [
+      {
+        field_name: "material_or_service",
+        value_text: "Construct a new gravel footpath extension through Trendlewood Community Park",
+        confidence: "verified",
+        source_span: "The scope of work is to construct a new gravel footpath in Compartment 6 of Trendlewood Community Park, Nailsea",
+      },
+      {
+        field_name: "key_risk_or_constraint",
+        value_text: "Route crosses open grassland and 60 metres of woodland within a public community park",
+        confidence: "verified",
+        source_span: "the majority of the route being across open grassland, with 60 metres through woodland at the northern end",
+      },
+    ],
+    notes:
+      "Small parks-department gravel-path job. Real material match (gravel) but no tonnage stated and no vehicle/plant requirement specified — a genuine strong-fit-on-paper case where the actual deliverable is small in scale relative to a 25-vehicle fleet.",
+  },
 };
 
 async function main() {

@@ -61,15 +61,37 @@ export function haversineMiles(a: LatLng, b: LatLng): number {
   return R_MILES * c;
 }
 
+const UK_POSTCODE = /\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b/i;
+
 /**
  * Best-effort extraction of a geocodable place name from a free-text
- * location string like "Lerwick, Shetland, UKM66" — takes the first
- * comma-separated segment. Documented heuristic, not a claim of perfect
- * address parsing; good enough for the vertical slice's town/city-level
- * precision (docs/architecture/04-implementation-status.md known limitations).
+ * location string. Two real shapes appear in this codebase's actual data
+ * and need different handling (found by inspecting real matching output,
+ * not assumed):
+ *   - Procurement notices: "Lerwick, Shetland, UKM66" — town first, then a
+ *     NUTS/ONS region code. First comma-separated segment is the town.
+ *   - Planning signals (full street addresses): "Rosemary Avenue, Newton
+ *     Abbot TQ12 1SB" — the town sits just before a real UK postcode, not
+ *     in the first segment (which is a street name). Taking the first
+ *     segment here previously extracted "Rosemary Avenue" and failed to
+ *     geocode, silently degrading every planning-signal match to "unknown"
+ *     geography — regression-tested in test/geocode.test.ts.
+ * Strategy: if a real UK postcode is present, use the text immediately
+ * before it (minus any leading street/building fragment after the last
+ * comma) as the place name; otherwise fall back to the first segment.
+ * Documented heuristic, not a claim of perfect address parsing — good
+ * enough for town/city-level precision (docs/architecture/04-implementation-status.md).
  */
 export function primaryPlaceName(locationText: string | null): string | null {
   if (!locationText) return null;
+
+  const postcodeMatch = locationText.match(UK_POSTCODE);
+  if (postcodeMatch && postcodeMatch.index !== undefined) {
+    const beforePostcode = locationText.slice(0, postcodeMatch.index).trim();
+    const lastSegment = beforePostcode.split(",").pop()?.trim();
+    if (lastSegment) return lastSegment;
+  }
+
   const first = locationText.split(",")[0]?.trim();
   return first || null;
 }
