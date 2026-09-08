@@ -1,0 +1,1161 @@
+<title>Fleet Radar</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+:root{
+  --ground:#eef1ef;
+  --surface:#ffffff;
+  --surface-2:#e5e9e5;
+  --surface-3:#dde2dd;
+  --ink:#1a1d1b;
+  --ink-secondary:#52564f;
+  --ink-muted:#82877e;
+  --border:#d5dad2;
+  --border-strong:#c2c8bd;
+  --accent:#c07a24;
+  --accent-strong:#9c5f13;
+  --accent-soft:#f2e2c7;
+  --accent-ink:#5a3a0c;
+  --good:#2e7d4f;
+  --good-soft:#dbeee1;
+  --good-ink:#1f5536;
+  --warn:#a17a0c;
+  --warn-soft:#f1e6c4;
+  --warn-ink:#725509;
+  --critical:#b23a2e;
+  --critical-soft:#f5dad5;
+  --critical-ink:#7e2a21;
+  --info:#345f89;
+  --info-soft:#dde6ee;
+  --info-ink:#25445f;
+  --shadow-1:0 1px 2px rgba(20,20,15,.06), 0 1px 1px rgba(20,20,15,.04);
+  --shadow-2:0 6px 20px rgba(20,20,15,.10), 0 2px 6px rgba(20,20,15,.06);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#14171a;
+    --surface:#1c2024;
+    --surface-2:#20242a;
+    --surface-3:#282d33;
+    --ink:#edeee9;
+    --ink-secondary:#b7bbb2;
+    --ink-muted:#80857c;
+    --border:#333941;
+    --border-strong:#454c55;
+    --accent:#e0983f;
+    --accent-strong:#f0ac57;
+    --accent-soft:#3a2c16;
+    --accent-ink:#f2c98a;
+    --good:#4fae79;
+    --good-soft:#173222;
+    --good-ink:#8fd6ac;
+    --warn:#d1ab3d;
+    --warn-soft:#332a10;
+    --warn-ink:#e7c96b;
+    --critical:#e2695a;
+    --critical-soft:#3a1d18;
+    --critical-ink:#f2a297;
+    --info:#6fa0c9;
+    --info-soft:#182534;
+    --info-ink:#a8c8e3;
+    --shadow-1:0 1px 2px rgba(0,0,0,.4);
+    --shadow-2:0 8px 24px rgba(0,0,0,.45);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#14171a;
+  --surface:#1c2024;
+  --surface-2:#20242a;
+  --surface-3:#282d33;
+  --ink:#edeee9;
+  --ink-secondary:#b7bbb2;
+  --ink-muted:#80857c;
+  --border:#333941;
+  --border-strong:#454c55;
+  --accent:#e0983f;
+  --accent-strong:#f0ac57;
+  --accent-soft:#3a2c16;
+  --accent-ink:#f2c98a;
+  --good:#4fae79;
+  --good-soft:#173222;
+  --good-ink:#8fd6ac;
+  --warn:#d1ab3d;
+  --warn-soft:#332a10;
+  --warn-ink:#e7c96b;
+  --critical:#e2695a;
+  --critical-soft:#3a1d18;
+  --critical-ink:#f2a297;
+  --info:#6fa0c9;
+  --info-soft:#182534;
+  --info-ink:#a8c8e3;
+  --shadow-1:0 1px 2px rgba(0,0,0,.4);
+  --shadow-2:0 8px 24px rgba(0,0,0,.45);
+  color-scheme: dark;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--ink);
+  font-family:'Public Sans',system-ui,sans-serif;
+  font-size:14.5px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4{font-family:'Archivo',system-ui,sans-serif;font-weight:800;letter-spacing:-0.01em;margin:0;text-wrap:balance;}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;}
+a{color:inherit;}
+button{font-family:inherit;}
+::selection{background:var(--accent-soft);}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+/* ---------- layout ---------- */
+.app{display:flex;min-height:100vh;}
+.nav{
+  width:236px;flex-shrink:0;background:var(--surface-2);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;padding:1.15rem .9rem;position:sticky;top:0;height:100vh;overflow-y:auto;gap:1.4rem;
+}
+.brand{display:flex;align-items:center;gap:.6rem;padding:.2rem .35rem .4rem;}
+.brand__mark{width:30px;height:30px;border-radius:7px;background:var(--accent);color:#fff;display:grid;place-items:center;flex-shrink:0;}
+.brand__mark svg{width:17px;height:17px;}
+.brand__name{font-family:'Archivo';font-weight:800;font-size:1.02rem;letter-spacing:-.01em;}
+.brand__sub{font-size:.68rem;color:var(--ink-muted);font-weight:600;letter-spacing:.03em;text-transform:uppercase;}
+.navlist{display:flex;flex-direction:column;gap:.15rem;}
+.navlink{
+  display:flex;align-items:center;gap:.65rem;padding:.55rem .65rem;border-radius:8px;
+  color:var(--ink-secondary);font-weight:600;font-size:.88rem;cursor:pointer;border:1px solid transparent;
+  background:transparent;text-align:left;width:100%;
+}
+.navlink svg{width:17px;height:17px;flex-shrink:0;opacity:.85;}
+.navlink:hover{background:var(--surface-3);color:var(--ink);}
+.navlink.active{background:var(--surface);color:var(--ink);border-color:var(--border);box-shadow:var(--shadow-1);}
+.navlink.active svg{opacity:1;color:var(--accent);}
+.navlink .count{margin-left:auto;font-family:'IBM Plex Mono';font-size:.72rem;font-weight:600;color:var(--ink-muted);background:var(--surface-3);padding:.05rem .4rem;border-radius:999px;}
+.navlink.active .count{background:var(--accent-soft);color:var(--accent-ink);}
+.nav__spacer{flex:1;}
+.nav__context{
+  border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:.75rem .8rem;font-size:.78rem;color:var(--ink-secondary);
+}
+.nav__context b{display:block;color:var(--ink);font-family:'Archivo';font-weight:700;font-size:.85rem;margin-bottom:.15rem;}
+.nav__context .row{display:flex;justify-content:space-between;margin-top:.3rem;color:var(--ink-muted);}
+.nav__context .row span:last-child{color:var(--ink-secondary);font-weight:600;font-family:'IBM Plex Mono';}
+
+.main{flex:1;min-width:0;display:flex;flex-direction:column;}
+.topbar{
+  padding:1rem 2rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;
+  gap:1rem;background:var(--surface);position:sticky;top:0;z-index:5;flex-wrap:wrap;
+}
+.topbar__title{display:flex;flex-direction:column;gap:.1rem;}
+.topbar__title h1{font-size:1.28rem;}
+.topbar__meta{font-size:.78rem;color:var(--ink-muted);}
+.topbar__actions{display:flex;align-items:center;gap:.6rem;}
+.proto-badge{
+  display:inline-flex;align-items:center;gap:.4rem;font-size:.68rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--warn-ink);background:var(--warn-soft);border:1px solid var(--warn);border-radius:999px;padding:.28rem .6rem;
+}
+.proto-badge svg{width:12px;height:12px;}
+.content{padding:1.75rem 2rem 3rem;display:flex;flex-direction:column;gap:1.75rem;max-width:1180px;width:100%;margin:0 auto;}
+@media (max-width:900px){
+  .app{flex-direction:column;}
+  .nav{position:static;width:100%;height:auto;flex-direction:row;align-items:center;overflow-x:auto;border-right:none;border-bottom:1px solid var(--border);}
+  .brand{padding:0 .5rem 0 0;}
+  .navlist{flex-direction:row;}
+  .nav__spacer{display:none;}
+  .nav__context{display:none;}
+  .content{padding:1.25rem 1rem 2.5rem;}
+  .topbar{padding:.85rem 1rem;}
+}
+
+/* ---------- buttons ---------- */
+.btn{
+  display:inline-flex;align-items:center;gap:.45rem;font-weight:700;font-size:.83rem;padding:.5rem .9rem;border-radius:8px;
+  border:1px solid transparent;cursor:pointer;background:var(--accent);color:#fff;transition:background .12s ease;
+}
+.btn svg{width:14px;height:14px;}
+.btn:hover{background:var(--accent-strong);}
+.btn--ghost{background:transparent;border-color:var(--border-strong);color:var(--ink);}
+.btn--ghost:hover{background:var(--surface-3);}
+.btn--sm{padding:.35rem .65rem;font-size:.76rem;}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+
+/* ---------- section heading ---------- */
+.section-head{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
+.section-head h2{font-size:1.02rem;}
+.section-head .hint{font-size:.78rem;color:var(--ink-muted);}
+
+/* ---------- stat tiles ---------- */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:.85rem;}
+@media (max-width:760px){.stats{grid-template-columns:repeat(2,1fr);}}
+.tile{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem 1.1rem;box-shadow:var(--shadow-1);display:flex;flex-direction:column;gap:.3rem;}
+.tile__label{font-size:.72rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-muted);}
+.tile__value{font-family:'IBM Plex Mono';font-weight:600;font-size:1.55rem;color:var(--ink);}
+.tile__sub{font-size:.76rem;color:var(--ink-secondary);}
+.tile--accent .tile__value{color:var(--accent-strong);}
+
+/* ---------- alert strip ---------- */
+.alert{
+  display:flex;align-items:flex-start;gap:.65rem;background:var(--warn-soft);border:1px solid var(--warn);color:var(--warn-ink);
+  border-radius:10px;padding:.7rem .9rem;font-size:.83rem;
+}
+.alert svg{width:16px;height:16px;flex-shrink:0;margin-top:.1rem;}
+.alert b{font-weight:700;}
+
+/* ---------- badges / provenance ---------- */
+.badge{
+  display:inline-flex;align-items:center;gap:.32em;font-weight:700;font-size:.66rem;letter-spacing:.03em;text-transform:uppercase;
+  padding:.22em .55em;border-radius:999px;border:1px solid transparent;white-space:nowrap;
+}
+.badge svg{width:10px;height:10px;}
+.badge--verified{background:var(--info-soft);color:var(--info-ink);border-color:var(--info);}
+.badge--calculated{background:var(--surface-3);color:var(--ink-secondary);border-color:var(--border-strong);}
+.badge--customer{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent);}
+.badge--estimated{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn);}
+.badge--unknown{background:transparent;color:var(--ink-muted);border-color:var(--border-strong);border-style:dashed;}
+.pill{display:inline-flex;align-items:center;gap:.35em;font-weight:700;font-size:.72rem;padding:.25em .6em;border-radius:999px;}
+.pill--good{background:var(--good-soft);color:var(--good-ink);}
+.pill--warn{background:var(--warn-soft);color:var(--warn-ink);}
+.pill--critical{background:var(--critical-soft);color:var(--critical-ink);}
+.pill--muted{background:var(--surface-3);color:var(--ink-secondary);}
+.pill--accent{background:var(--accent-soft);color:var(--accent-ink);}
+
+/* ---------- score ring ---------- */
+.ring{position:relative;width:56px;height:56px;border-radius:50%;flex-shrink:0;background:conic-gradient(var(--ring-c) calc(var(--p)*3.6deg), var(--border) 0deg);}
+.ring::after{content:'';position:absolute;inset:6px;border-radius:50%;background:var(--surface);}
+.ring__num{position:absolute;inset:0;display:grid;place-items:center;font-family:'IBM Plex Mono';font-weight:600;font-size:.95rem;color:var(--ink);z-index:1;}
+.ring--lg{width:88px;height:88px;}
+.ring--lg::after{inset:9px;}
+.ring--lg .ring__num{font-size:1.4rem;}
+
+/* ---------- opportunity cards ---------- */
+.filters{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;}
+.seg{display:inline-flex;border:1px solid var(--border-strong);border-radius:8px;overflow:hidden;}
+.seg button{
+  background:var(--surface);border:none;padding:.4rem .75rem;font-size:.78rem;font-weight:600;color:var(--ink-secondary);cursor:pointer;
+  border-right:1px solid var(--border-strong);
+}
+.seg button:last-child{border-right:none;}
+.seg button.active{background:var(--accent);color:#fff;}
+
+.card-list{display:flex;flex-direction:column;gap:.7rem;}
+.opp-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem 1.1rem;box-shadow:var(--shadow-1);
+  display:grid;grid-template-columns:56px 1fr auto;gap:1rem;align-items:flex-start;cursor:pointer;transition:box-shadow .12s ease, border-color .12s ease;
+}
+.opp-card:hover{box-shadow:var(--shadow-2);border-color:var(--border-strong);}
+.opp-card__main{display:flex;flex-direction:column;gap:.4rem;min-width:0;}
+.opp-card__top{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;}
+.opp-card__title{font-family:'Archivo';font-weight:700;font-size:.98rem;}
+.opp-card__meta{display:flex;flex-wrap:wrap;gap:.15rem .9rem;font-size:.78rem;color:var(--ink-muted);}
+.opp-card__meta b{color:var(--ink-secondary);font-weight:600;}
+.opp-card__reqs{font-size:.83rem;color:var(--ink-secondary);}
+.opp-card__badges{display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.1rem;}
+.opp-card__side{display:flex;flex-direction:column;align-items:flex-end;gap:.4rem;text-align:right;}
+.opp-card__value{font-family:'IBM Plex Mono';font-weight:600;font-size:.95rem;}
+.opp-card__action{font-size:.74rem;color:var(--ink-muted);max-width:180px;}
+@media (max-width:640px){
+  .opp-card{grid-template-columns:44px 1fr;}
+  .opp-card__side{grid-column:1/-1;flex-direction:row;justify-content:space-between;align-items:center;text-align:left;}
+  .ring{width:44px;height:44px;}
+  .ring::after{inset:5px;}
+}
+
+.empty{
+  border:1px dashed var(--border-strong);border-radius:12px;padding:2.2rem 1.5rem;text-align:center;color:var(--ink-muted);
+  display:flex;flex-direction:column;gap:.4rem;align-items:center;background:var(--surface);
+}
+.empty svg{width:26px;height:26px;opacity:.6;margin-bottom:.2rem;}
+.empty b{color:var(--ink-secondary);}
+
+/* ---------- skeleton ---------- */
+.skeleton{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem 1.1rem;display:grid;grid-template-columns:56px 1fr auto;gap:1rem;}
+.skel-block{background:linear-gradient(90deg,var(--surface-3) 25%,var(--border) 37%,var(--surface-3) 63%);background-size:400% 100%;border-radius:6px;animation:shimmer 1.4s ease infinite;}
+@keyframes shimmer{0%{background-position:100% 0;}100%{background-position:0 0;}}
+@media (prefers-reduced-motion:reduce){.skel-block{animation:none;}}
+
+/* ---------- detail page ---------- */
+.detail-grid{display:grid;grid-template-columns:1fr 320px;gap:1.5rem;align-items:start;}
+@media (max-width:960px){.detail-grid{grid-template-columns:1fr;}}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.25rem 1.35rem;box-shadow:var(--shadow-1);display:flex;flex-direction:column;gap:.9rem;}
+.panel h3{font-size:.92rem;display:flex;align-items:center;gap:.5rem;}
+.panel h3 svg{width:16px;height:16px;color:var(--accent);}
+.stack{display:flex;flex-direction:column;gap:1.25rem;}
+.fact{display:flex;justify-content:space-between;gap:1rem;padding:.5rem 0;border-bottom:1px solid var(--border);font-size:.86rem;}
+.fact:last-child{border-bottom:none;}
+.fact__label{color:var(--ink-secondary);}
+.fact__value{font-family:'IBM Plex Mono';font-weight:600;text-align:right;}
+.fact__src{display:block;font-family:'Public Sans';font-weight:400;font-size:.72rem;color:var(--ink-muted);margin-top:.15rem;}
+
+.bar-row{display:grid;grid-template-columns:118px 1fr 34px;gap:.7rem;align-items:center;font-size:.8rem;}
+.bar-row + .bar-row{margin-top:.5rem;}
+.bar-track{height:8px;border-radius:4px;background:var(--border);overflow:hidden;}
+.bar-fill{height:100%;border-radius:4px;background:var(--accent);}
+.bar-val{font-family:'IBM Plex Mono';text-align:right;color:var(--ink-secondary);}
+
+.evi-table{width:100%;border-collapse:collapse;font-size:.82rem;}
+.evi-table th{text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-muted);font-weight:700;padding:.4rem .6rem;border-bottom:1px solid var(--border-strong);}
+.evi-table td{padding:.55rem .6rem;border-bottom:1px solid var(--border);vertical-align:top;}
+.evi-table tr:last-child td{border-bottom:none;}
+.table-wrap{overflow-x:auto;}
+.evi-src{font-size:.74rem;color:var(--info);text-decoration:none;}
+.evi-src:hover{text-decoration:underline;}
+
+.action-box{display:flex;flex-direction:column;gap:.7rem;}
+.status-row{display:flex;flex-wrap:wrap;gap:.4rem;}
+.status-btn{
+  border:1px solid var(--border-strong);background:var(--surface);color:var(--ink-secondary);border-radius:999px;
+  padding:.35rem .7rem;font-size:.76rem;font-weight:600;cursor:pointer;
+}
+.status-btn.active{background:var(--ink);color:var(--surface);border-color:var(--ink);}
+.status-btn[data-status="won"].active{background:var(--good);border-color:var(--good);}
+.status-btn[data-status="lost"].active{background:var(--critical);border-color:var(--critical);}
+.status-btn[data-status="not_relevant"].active{background:var(--ink-muted);border-color:var(--ink-muted);}
+.feedback-box{border-top:1px solid var(--border);padding-top:.75rem;display:flex;flex-direction:column;gap:.5rem;}
+.feedback-row{display:flex;gap:.5rem;}
+.fb-btn{border:1px solid var(--border-strong);background:var(--surface);border-radius:8px;padding:.35rem .6rem;cursor:pointer;display:flex;gap:.35rem;align-items:center;font-size:.78rem;font-weight:600;color:var(--ink-secondary);}
+.fb-btn svg{width:14px;height:14px;}
+.fb-btn.selected{border-color:var(--accent);color:var(--accent-strong);background:var(--accent-soft);}
+textarea{width:100%;border:1px solid var(--border-strong);border-radius:8px;padding:.55rem .65rem;font-family:inherit;font-size:.82rem;resize:vertical;min-height:56px;background:var(--surface);color:var(--ink);}
+
+/* ---------- pipeline ---------- */
+.pipeline{display:grid;grid-template-columns:repeat(6,minmax(180px,1fr));gap:.85rem;overflow-x:auto;padding-bottom:.5rem;}
+@media (max-width:1100px){.pipeline{grid-auto-flow:column;grid-template-columns:none;}}
+.pcol{display:flex;flex-direction:column;gap:.6rem;min-width:180px;}
+.pcol__head{display:flex;align-items:center;justify-content:space-between;font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-muted);padding:0 .1rem;}
+.pcol__head .count{font-family:'IBM Plex Mono';background:var(--surface-3);border-radius:999px;padding:.05rem .45rem;}
+.pcard{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.7rem .8rem;box-shadow:var(--shadow-1);cursor:pointer;display:flex;flex-direction:column;gap:.4rem;}
+.pcard:hover{border-color:var(--border-strong);}
+.pcard__title{font-size:.82rem;font-weight:700;font-family:'Archivo';line-height:1.3;}
+.pcard__meta{font-size:.71rem;color:var(--ink-muted);display:flex;justify-content:space-between;}
+.pcol-empty{border:1px dashed var(--border-strong);border-radius:10px;padding:1rem .6rem;text-align:center;color:var(--ink-muted);font-size:.74rem;}
+
+/* ---------- profile form ---------- */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+@media (max-width:760px){.form-grid{grid-template-columns:1fr;}}
+.field{display:flex;flex-direction:column;gap:.35rem;}
+.field label{font-size:.76rem;font-weight:700;color:var(--ink-secondary);}
+.field .hint{font-size:.71rem;color:var(--ink-muted);font-weight:400;}
+input[type=text],input[type=number]{
+  border:1px solid var(--border-strong);border-radius:8px;padding:.5rem .65rem;font-family:'IBM Plex Mono';font-size:.85rem;
+  background:var(--surface);color:var(--ink);width:100%;
+}
+input:focus{border-color:var(--accent);}
+.chip-input{display:flex;flex-wrap:wrap;gap:.4rem;}
+.chip{
+  display:inline-flex;align-items:center;gap:.4rem;background:var(--surface-3);border:1px solid var(--border-strong);border-radius:999px;
+  padding:.3rem .5rem .3rem .75rem;font-size:.78rem;font-weight:600;cursor:pointer;user-select:none;
+}
+.chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink);}
+.fleet-row{display:grid;grid-template-columns:1fr 90px auto;gap:.5rem;align-items:center;}
+.fleet-total{font-size:.78rem;color:var(--ink-muted);}
+
+/* ---------- toast ---------- */
+.toast{
+  position:fixed;bottom:1.4rem;right:1.4rem;background:var(--ink);color:var(--ground);padding:.7rem 1rem;border-radius:10px;
+  font-size:.83rem;font-weight:600;box-shadow:var(--shadow-2);display:flex;align-items:center;gap:.5rem;z-index:50;
+  transform:translateY(12px);opacity:0;transition:all .18s ease;pointer-events:none;
+}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast svg{width:15px;height:15px;color:var(--accent-strong);}
+
+/* ---------- sources page ---------- */
+.src-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem 1.2rem;box-shadow:var(--shadow-1);display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:center;}
+.src-name{font-family:'Archivo';font-weight:700;font-size:.95rem;display:flex;align-items:center;gap:.5rem;}
+.src-meta{font-size:.78rem;color:var(--ink-muted);margin-top:.25rem;}
+.legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.75rem;}
+.legend-item{display:flex;gap:.6rem;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.75rem .85rem;}
+.legend-item b{display:block;font-family:'Archivo';font-size:.86rem;margin-bottom:.15rem;}
+.legend-item p{margin:0;font-size:.78rem;color:var(--ink-secondary);}
+</style>
+
+<div class="app">
+  <nav class="nav" id="nav"></nav>
+  <div class="main">
+    <div class="topbar" id="topbar"></div>
+    <main class="content" id="view"></main>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============ icons ============ */
+const I = {
+  logo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 17h2l2-6h6l3 6h5"/><circle cx="7.5" cy="18.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="17.5" cy="18.5" r="1.5" fill="currentColor" stroke="none"/></svg>',
+  grid:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
+  list:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+  kanban:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="5" height="13" rx="1"/></svg>',
+  user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c1-4 4.5-6 7-6s6 2 7 6"/></svg>',
+  db:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.5"/><path d="M4.5 5.5v6c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-6"/><path d="M4.5 11.5v6c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-6"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6"/></svg>',
+  calc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6h12M6 12h12M6 18h6"/></svg>',
+  wave:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M3 12c2-3 4-3 6 0s4 3 6 0 4-3 6 0"/></svg>',
+  dash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12h14"/></svg>',
+  person:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><circle cx="12" cy="8" r="3"/><path d="M6 20c1-3.5 3.8-5 6-5s5 1.5 6 5"/></svg>',
+  chev:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+  back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>',
+  alert:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2.6 18a1.8 1.8 0 001.6 2.7h15.6a1.8 1.8 0 001.6-2.7L13.7 3.9a1.8 1.8 0 00-3.4 0z"/></svg>',
+  flag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v18M5 4h11l-2.5 4L16 12H5"/></svg>',
+  target:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".6" fill="currentColor"/></svg>',
+  pound:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 20h9M7 20c1.6 0 3-1 3-3v-3M7 20H6M10 14H7m3 0V8.5a3.5 3.5 0 016.6-1.6"/></svg>',
+  clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2" stroke-linecap="round"/></svg>',
+  file:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/></svg>',
+  spark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>',
+  thumbUp:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11v9H4a1 1 0 01-1-1v-7a1 1 0 011-1h3zm0 0l4-8a2.5 2.5 0 015 1v5h4.2a2 2 0 011.97 2.3l-1.1 7A2 2 0 0119.1 20H10a3 3 0 01-3-3"/></svg>',
+  thumbDown:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 13V4h3a1 1 0 011 1v7a1 1 0 01-1 1h-3zm0 0l-4 8a2.5 2.5 0 01-5-1v-5H3.8a2 2 0 01-1.97-2.3l1.1-7A2 2 0 014.9 4H14a3 3 0 013 3"/></svg>',
+  route:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h6a4 4 0 000-8H10a4 4 0 010-8h6"/></svg>',
+};
+function icon(name,cls){return `<span class="${cls||''}" style="display:inline-flex">${I[name]||''}</span>`;}
+
+/* ============ demo data ============ */
+const STORE_KEY = 'fleet-radar-demo-v1';
+
+const defaultProfile = {
+  name: 'NRS Services Ltd',
+  base: 'Tamworth, Staffordshire',
+  services: ['Aggregate haulage','Waste haulage','Muck-away'],
+  fleet: [
+    {type:'8-wheel tipper', count:14},
+    {type:'Articulated tipper', count:7},
+    {type:'Grab vehicle', count:4},
+  ],
+  radius: 100,
+  capacityAvailable: 20,
+  minValue: 25000,
+  sectors: ['Construction','Infrastructure','Aggregates','Quarrying','Waste','Earthworks'],
+  rates: {payload:20, pricePerTonne:8.50, pricePerMile:3.20, fuelPerMile:0.95, driverPerDay:220, minMargin:18},
+};
+const ALL_SERVICES = ['Aggregate haulage','Waste haulage','Muck-away','Plant hire','General haulage','Demolition support'];
+const ALL_SECTORS = ['Construction','Infrastructure','Aggregates','Quarrying','Waste','Earthworks','Rail','Residential','Energy'];
+
+function scoreBreakdown(o){
+  const w = {service:.25, fleet:.20, geography:.20, capacity:.15, commercial:.10, sector:.10};
+  const total = Object.keys(w).reduce((s,k)=> s + w[k]*o.c[k], 0);
+  return Math.round(total);
+}
+
+const OPPS = [
+  {
+    id:'a5-corridor', status:'new',
+    title:'A5 Corridor Highways Drainage Improvement — Aggregate Haulage Package',
+    buyer:'Staffordshire County Council', source:'Find a Tender Service', sourceRef:'FTS-2026-041782',
+    location:'Tamworth–Lichfield A5 corridor, Staffordshire', distance:18,
+    valueLabel:'£180,000 – £220,000', valueBasis:'verified',
+    deadlineDays:12, deadlineLabel:'12 days · tender closes', startLabel:'Works start in 6 weeks',
+    reqSummary:'14,000t Type 1 aggregate import · 8-wheel tipper',
+    c:{service:100, fleet:95, geography:93, capacity:88, commercial:90, sector:100},
+    confidence:'High',
+    requirements:[
+      {field:'Material & quantity', value:'14,000 tonnes Type 1 aggregate', label:'verified', src:'Contract notice, Lot 2 specification'},
+      {field:'Service', value:'Aggregate haulage, import to site', label:'verified', src:'Contract notice, scope of works'},
+      {field:'Vehicle type', value:'8-wheel rigid tipper (site access constraint: 32t max GVW)', label:'verified', src:'Site access statement, appendix C'},
+      {field:'Contract period', value:'6 weeks from award', label:'verified', src:'Contract notice, key dates'},
+      {field:'Named contact', value:'Not published — respond via Find a Tender portal', label:'unknown', src:'—'},
+    ],
+    evidence:[
+      {claim:'Contract value estimate', value:'£180,000 – £220,000', label:'verified', src:'Find a Tender notice FTS-2026-041782', url:'find-tender.service.gov.uk'},
+      {claim:'Aggregate quantity', value:'14,000 tonnes', label:'verified', src:'Notice specification, Lot 2', url:'find-tender.service.gov.uk'},
+      {claim:'Estimated loads', value:'700 loads', label:'calculated', src:'14,000t ÷ 20t configured payload', url:null},
+      {claim:'Distance from base', value:'18 miles', label:'calculated', src:'Route distance, Tamworth depot → site postcode', url:null},
+      {claim:'Buyer registration status', value:'Staffordshire County Council — local authority, active', label:'verified', src:'Companies House / local authority register', url:'find-and-update.company-information.service.gov.uk'},
+      {claim:'Available fleet for this window', value:'20 vehicles', label:'customer', src:'Your business profile', url:null},
+    ],
+    commercial:{loads:700, revenue:119000, revenueLabel:'calculated', cost:43300, contribution:75700, margin:63.6, note:'Price/tonne basis · your configured rates'},
+    action:'Register interest via Find a Tender before the 12-day deadline; contact Staffordshire CC procurement to confirm the haulage subcontracting route.',
+  },
+  {
+    id:'derby-regen', status:'interested',
+    title:'Housing-Led Regeneration — Enabling Works Package, Derby',
+    buyer:'Derby City Council', source:'Contracts Finder', sourceRef:'CF-2026-118834',
+    location:'Derby city centre', distance:34,
+    valueLabel:'£95,000 – £140,000', valueBasis:'estimated',
+    deadlineDays:null, deadlineLabel:'Not stated in notice', startLabel:'Site clearance phase',
+    reqSummary:'Spoil removal, ~9,000t estimated · muck-away',
+    c:{service:95, fleet:82, geography:78, capacity:74, commercial:68, sector:90},
+    confidence:'Medium',
+    requirements:[
+      {field:'Service', value:'Site clearance and spoil removal (enabling works)', label:'verified', src:'Contract notice, scope'},
+      {field:'Spoil quantity', value:'~9,000 tonnes (range 7,200–10,800t)', label:'inferred', src:'Estimated from stated site area (1.8 ha) and typical enabling-works excavation depth — not confirmed by buyer'},
+      {field:'Vehicle type', value:'Articulated tipper preferred; grab vehicle useful for access-constrained areas', label:'inferred', src:'Site photos in notice appendix suggest restricted access — not explicitly specified'},
+      {field:'Deadline', value:'Not stated', label:'unknown', src:'—'},
+    ],
+    evidence:[
+      {claim:'Contract value band', value:'£95,000 – £140,000', label:'verified', src:'Contracts Finder notice CF-2026-118834', url:'contractsfinder.service.gov.uk'},
+      {claim:'Spoil tonnage', value:'~9,000t (estimated)', label:'inferred', src:'Derived from stated site area — buyer has not confirmed a figure', url:null},
+      {claim:'Estimated loads', value:'450 loads (range 360–540)', label:'estimated', src:'Estimated tonnage ÷ 20t configured payload', url:null},
+      {claim:'Distance from base', value:'34 miles', label:'calculated', src:'Route distance, Tamworth depot → site postcode', url:null},
+    ],
+    commercial:{loads:450, revenue:76500, revenueLabel:'estimated', cost:31000, contribution:45500, margin:59.5, note:'Based on estimated tonnage — treat as a range, not a fixed figure, until the buyer confirms volumes.'},
+    action:'Contact Derby City Council\'s enabling-works contractor directly to confirm spoil volumes before the value can be verified — tonnage is currently an estimate.',
+  },
+  {
+    id:'nh-framework', status:'contacted',
+    title:'Midlands Trunk Road Resurfacing — Tipper Haulage Framework',
+    buyer:'National Highways', source:'Find a Tender Service', sourceRef:'FTS-2026-039205',
+    location:'Multiple sites, Midlands region', distance:95,
+    valueLabel:'£2,400,000 ceiling (4-year framework)', valueBasis:'verified',
+    deadlineDays:26, deadlineLabel:'26 days · PQQ closes', startLabel:'Call-offs issued after appointment',
+    reqSummary:'Tipper haulage capacity, call-off basis · framework',
+    c:{service:92, fleet:88, geography:80, capacity:45, commercial:42, sector:95},
+    confidence:'Medium',
+    requirements:[
+      {field:'Service', value:'Tipper haulage capacity, various Midlands sites', label:'verified', src:'Framework notice, scope'},
+      {field:'Framework ceiling value', value:'£2,400,000 over 4 years (not a guaranteed spend)', label:'verified', src:'Framework notice, financial information'},
+      {field:'Individual call-off values', value:'Not yet known', label:'unknown', src:'Issued only after framework award'},
+      {field:'Vehicle type', value:'8-wheel and articulated tipper', label:'verified', src:'Framework notice, lot descriptions'},
+    ],
+    evidence:[
+      {claim:'Framework ceiling value', value:'£2,400,000 (4-year total, not guaranteed)', label:'verified', src:'Find a Tender notice FTS-2026-039205', url:'find-tender.service.gov.uk'},
+      {claim:'PQQ deadline', value:'26 days', label:'verified', src:'Framework notice, key dates', url:'find-tender.service.gov.uk'},
+      {claim:'Furthest lot distance', value:'up to 95 miles', label:'calculated', src:'Route distance to furthest listed site cluster', url:null},
+    ],
+    commercial:{loads:null, revenue:null, revenueLabel:'unknown', cost:null, contribution:null, margin:null, note:'Call-off values are not issued until after framework appointment — no revenue estimate is possible yet. Shown as Unknown rather than guessed.'},
+    action:'Submit a PQQ response before day 26. Framework access is a strategic capacity play, not an immediate revenue event — treat commercial value as Unknown until call-offs are issued.',
+  },
+  {
+    id:'leics-waste', status:'new',
+    title:'Waste Transfer Haulage Services',
+    buyer:'Leicestershire County Council', source:'Find a Tender Service', sourceRef:'FTS-2026-044021',
+    location:'Leicester', distance:52,
+    valueLabel:'£38,000 – £45,000', valueBasis:'verified',
+    deadlineDays:13, deadlineLabel:'13 days · tender closes', startLabel:'8-month contract',
+    reqSummary:'Licensed waste haulage · 8-month term',
+    c:{service:90, fleet:70, geography:58, capacity:80, commercial:45, sector:75},
+    confidence:'High',
+    requirements:[
+      {field:'Service', value:'Waste haulage, licensed carrier required', label:'verified', src:'Contract notice, mandatory requirements'},
+      {field:'Contract term', value:'8 months', label:'verified', src:'Contract notice, key dates'},
+      {field:'Vehicle type', value:'General haulage vehicle — no tipper specification stated', label:'verified', src:'Contract notice, scope'},
+    ],
+    evidence:[
+      {claim:'Contract value', value:'£38,000 – £45,000', label:'verified', src:'Find a Tender notice FTS-2026-044021', url:'find-tender.service.gov.uk'},
+      {claim:'Waste carrier licence required', value:'Upper tier, covering Leicestershire', label:'verified', src:'Contract notice, mandatory requirements', url:null},
+      {claim:'Distance from base', value:'52 miles', label:'calculated', src:'Route distance, Tamworth depot → Leicester', url:null},
+      {claim:'Estimated net contribution', value:'£14,000 – £19,000', label:'estimated', src:'Modelled from average distance and assumed weekly load frequency', url:null},
+    ],
+    commercial:{loads:null, revenue:41500, revenueLabel:'verified', cost:24500, contribution:16500, margin:39.8, note:'Contract value verified from notice; cost and contribution are modelled estimates, not guaranteed.'},
+    action:'Straightforward fit — confirm your waste-carrier licence covers Leicestershire before responding. Modest value, low effort to pursue.',
+  },
+  {
+    id:'brum-basement', status:'not_relevant',
+    title:'Grab Hire & Muck-Away — City Centre Basement Works',
+    buyer:'Main contractor (published via public-sector-linked notice)', source:'Find a Tender Service', sourceRef:'FTS-2026-046190',
+    location:'Birmingham city centre', distance:24,
+    valueLabel:'£26,500', valueBasis:'verified',
+    deadlineDays:5, deadlineLabel:'5 days · mobilisation required', startLabel:'Immediate',
+    reqSummary:'Grab vehicle muck-away · 5-day mobilisation',
+    c:{service:80, fleet:85, geography:85, capacity:15, commercial:25, sector:60},
+    confidence:'Low',
+    requirements:[
+      {field:'Service', value:'Grab vehicle muck-away, basement excavation', label:'verified', src:'Notice, scope of works'},
+      {field:'Mobilisation window', value:'5 days from award', label:'verified', src:'Notice, key dates'},
+    ],
+    evidence:[
+      {claim:'Contract value', value:'£26,500', label:'verified', src:'Find a Tender notice FTS-2026-046190', url:'find-tender.service.gov.uk'},
+      {claim:'Mobilisation window', value:'5 days', label:'verified', src:'Notice, key dates', url:null},
+      {claim:'Available capacity at notice date', value:'Committed elsewhere', label:'customer', src:'Your business profile, capacity at time of match', url:null},
+    ],
+    commercial:{loads:null, revenue:26500, revenueLabel:'verified', cost:18000, contribution:8500, margin:32.1, note:'Value just above your minimum threshold — a marginal opportunity even before the mobilisation conflict.'},
+    action:'Good fleet and geography fit, but flagged as Not relevant — fleet was already committed inside the 5-day mobilisation window.',
+    feedback:{correct:true, note:'Good fit but we couldn\'t mobilise in 5 days — not a bad match, just bad timing.'},
+  },
+  {
+    id:'rail-sidings', status:'new',
+    title:'Aggregate Import — Rail Sidings Upgrade',
+    buyer:'Network Rail', source:'Find a Tender Service', sourceRef:'FTS-2026-042977',
+    location:'Nuneaton', distance:31,
+    valueLabel:'£310,000 – £380,000', valueBasis:'verified',
+    deadlineDays:21, deadlineLabel:'21 days · tender closes', startLabel:'Works start in 8 weeks',
+    reqSummary:'22,000t aggregate import · rail-adjacent access',
+    c:{service:100, fleet:92, geography:85, capacity:80, commercial:95, sector:85},
+    confidence:'High',
+    requirements:[
+      {field:'Material & quantity', value:'22,000 tonnes aggregate import', label:'verified', src:'Contract notice, specification'},
+      {field:'Site access', value:'Rail-adjacent site, restricted delivery windows apply', label:'verified', src:'Notice, access constraints appendix'},
+      {field:'Service', value:'Aggregate haulage, import to site', label:'verified', src:'Contract notice, scope'},
+    ],
+    evidence:[
+      {claim:'Contract value estimate', value:'£310,000 – £380,000', label:'verified', src:'Find a Tender notice FTS-2026-042977', url:'find-tender.service.gov.uk'},
+      {claim:'Aggregate quantity', value:'22,000 tonnes', label:'verified', src:'Notice specification', url:'find-tender.service.gov.uk'},
+      {claim:'Estimated loads', value:'1,100 loads', label:'calculated', src:'22,000t ÷ 20t configured payload', url:null},
+      {claim:'Distance from base', value:'31 miles', label:'calculated', src:'Route distance, Tamworth depot → Nuneaton site', url:null},
+      {claim:'Buyer registration status', value:'Network Rail Infrastructure Ltd — active', label:'verified', src:'Companies House', url:'find-and-update.company-information.service.gov.uk'},
+    ],
+    commercial:{loads:1100, revenue:187000, revenueLabel:'calculated', cost:95150, contribution:91850, margin:49.1, note:'Price/tonne basis · your configured rates'},
+    action:'High-value, high-fit opportunity — confirm rail-adjacent site access requirements with the principal contractor before bidding. 21-day deadline.',
+  },
+  {
+    id:'charnwood-won', status:'won',
+    title:'Quarry Restoration Haulage — Charnwood Forest Site',
+    buyer:'Leicestershire County Council', source:'Find a Tender Service', sourceRef:'FTS-2025-198344',
+    location:'Charnwood Forest, Leicestershire', distance:41,
+    valueLabel:'£164,000 (awarded)', valueBasis:'verified',
+    deadlineDays:null, deadlineLabel:'Closed 4 months ago', startLabel:'Delivered',
+    reqSummary:'Restoration condition discharge haulage',
+    c:{service:98, fleet:90, geography:82, capacity:85, commercial:88, sector:95},
+    confidence:'High',
+    requirements:[{field:'Outcome', value:'Awarded and delivered at £164,000', label:'customer', src:'Recorded by you after award'}],
+    evidence:[{claim:'Awarded value', value:'£164,000', label:'customer', src:'Recorded by you after award', url:null}],
+    commercial:{loads:null, revenue:164000, revenueLabel:'verified', cost:null, contribution:null, margin:null, note:'Historical, delivered contract.'},
+    action:'Delivered — retained for your win history.',
+    feedback:{correct:true, note:'Match was accurate — fleet and geography fit were spot on.'},
+  },
+  {
+    id:'ea-embankment', status:'lost',
+    title:'Flood Defence Embankment — Muck-Away Package',
+    buyer:'Environment Agency (capital scheme)', source:'Find a Tender Service', sourceRef:'FTS-2025-171092',
+    location:'River Trent floodplain, Staffordshire', distance:22,
+    valueLabel:'£52,000 (estimated)', valueBasis:'estimated',
+    deadlineDays:null, deadlineLabel:'Closed 7 months ago', startLabel:'—',
+    reqSummary:'Muck-away, flood defence capital scheme',
+    c:{service:90, fleet:85, geography:88, capacity:70, commercial:55, sector:80},
+    confidence:'Medium',
+    requirements:[{field:'Outcome', value:'Lost to an incumbent haulier already on-site', label:'customer', src:'Recorded by you after outcome'}],
+    evidence:[{claim:'Estimated value', value:'£52,000', label:'estimated', src:'Notice value band', url:null}],
+    commercial:{loads:null, revenue:52000, revenueLabel:'estimated', cost:null, contribution:null, margin:null, note:'Historical, lost bid.'},
+    action:'Lost — retained for your loss history and feedback.',
+    feedback:{correct:true, note:'Lost to an incumbent already on-site — good match, timing/relationship disadvantage, not a data problem.'},
+  },
+];
+OPPS.forEach(o=>{ o.score = scoreBreakdown(o); });
+
+const SOURCES = [
+  {name:'Find a Tender Service (OCDS API)', status:'active', licence:'OGL v3.0', synced:'1 hour ago', desc:'UK above- and below-threshold public contract notices. Bulk + REST, OCDS-compliant.'},
+  {name:'Companies House API', status:'active', licence:'OGL v3.0', synced:'18 hours ago', desc:'Company registration status, filings, and enrichment for buyers and contractors named in notices.'},
+  {name:'Planning application data', status:'deferred', licence:'—', synced:null, desc:'Deliberately not connected. Official national coverage is only 73 of 311 UK local planning authorities — see the product strategy doc for the decision.'},
+  {name:'Environment Agency Public Register', status:'deferred', licence:'Conditional licence — under review', synced:null, desc:'Under evaluation. Uses a distinct licence, not standard OGL — requires review before commercial use.'},
+];
+
+/* ============ state ============ */
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return null;
+}
+function saveState(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify({profile: state.profile, statuses: state.statuses, feedback: state.feedback})); }catch(e){}
+}
+const persisted = loadState();
+const state = {
+  view:'dashboard',
+  selected:null,
+  profile: (persisted && persisted.profile) || JSON.parse(JSON.stringify(defaultProfile)),
+  statuses: (persisted && persisted.statuses) || Object.fromEntries(OPPS.map(o=>[o.id,o.status])),
+  feedback: (persisted && persisted.feedback) || Object.fromEntries(OPPS.filter(o=>o.feedback).map(o=>[o.id,o.feedback])),
+  feedLoaded:false,
+  feedFilter:'all',
+};
+function statusOf(o){ return state.statuses[o.id] || o.status; }
+
+/* ============ helpers ============ */
+function fmtGBP(n){ if(n==null) return '—'; return '£' + Math.round(n).toLocaleString('en-GB'); }
+function scoreBand(s){ if(s>=85) return {c:'good', label:'High fit', ring:'var(--accent)'}; if(s>=55) return {c:'warn', label:'Medium fit', ring:'var(--warn)'}; return {c:'muted', label:'Low fit', ring:'var(--ink-muted)'}; }
+function badge(label){
+  const map = {
+    verified:{cls:'verified', ic:'check', text:'Verified'},
+    calculated:{cls:'calculated', ic:'calc', text:'Calculated'},
+    customer:{cls:'customer', ic:'person', text:'Your data'},
+    estimated:{cls:'estimated', ic:'wave', text:'Estimated'},
+    inferred:{cls:'estimated', ic:'wave', text:'Inferred'},
+    unknown:{cls:'unknown', ic:'dash', text:'Unknown'},
+  };
+  const m = map[label] || map.unknown;
+  return `<span class="badge badge--${m.cls}">${icon(m.ic)}${m.text}</span>`;
+}
+function statusPill(s){
+  const map = {
+    new:{cls:'accent', text:'New'}, interested:{cls:'accent', text:'Interested'}, contacted:{cls:'warn', text:'Contacted'},
+    won:{cls:'good', text:'Won'}, lost:{cls:'critical', text:'Lost'}, not_relevant:{cls:'muted', text:'Not relevant'},
+  };
+  const m = map[s] || map.new;
+  return `<span class="pill pill--${m.cls}">${m.text}</span>`;
+}
+function ring(score, big){
+  const b = scoreBand(score);
+  return `<div class="ring${big?' ring--lg':''}" style="--p:${score};--ring-c:${b.ring}"><span class="ring__num mono">${score}</span></div>`;
+}
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.innerHTML = icon('check') + '<span>'+msg+'</span>';
+  t.classList.add('show');
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(()=> t.classList.remove('show'), 2200);
+}
+
+/* ============ nav ============ */
+const NAV_ITEMS = [
+  {id:'dashboard', label:'Dashboard', icon:'grid'},
+  {id:'opportunities', label:'Opportunities', icon:'list', count:()=>OPPS.filter(o=>statusOf(o)==='new').length},
+  {id:'pipeline', label:'Pipeline', icon:'kanban'},
+  {id:'profile', label:'Business profile', icon:'user'},
+  {id:'sources', label:'Data & evidence', icon:'db'},
+];
+function renderNav(){
+  const p = state.profile;
+  document.getElementById('nav').innerHTML = `
+    <div class="brand">
+      <div class="brand__mark">${I.logo}</div>
+      <div>
+        <div class="brand__name">Fleet Radar</div>
+        <div class="brand__sub">Opportunity intelligence</div>
+      </div>
+    </div>
+    <div class="navlist">
+      ${NAV_ITEMS.map(n=>`
+        <button class="navlink ${state.view===n.id?'active':''}" data-nav="${n.id}">
+          ${icon(n.icon)}<span>${n.label}</span>
+          ${n.count ? `<span class="count">${n.count()}</span>` : ''}
+        </button>`).join('')}
+    </div>
+    <div class="nav__spacer"></div>
+    <div class="nav__context">
+      <b>${p.name}</b>
+      ${p.base}
+      <div class="row"><span>Fleet</span><span>${p.fleet.reduce((s,f)=>s+f.count,0)} vehicles</span></div>
+      <div class="row"><span>Radius</span><span>${p.radius} mi</span></div>
+      <div class="row"><span>Available</span><span>${p.capacityAvailable} vehicles</span></div>
+    </div>
+  `;
+  document.querySelectorAll('[data-nav]').forEach(el=>{
+    el.addEventListener('click', ()=>{ state.view = el.dataset.nav; state.selected=null; render(); });
+  });
+}
+
+/* ============ topbar ============ */
+const TITLES = {
+  dashboard:['Dashboard','Live view of matched commercial opportunities'],
+  opportunities:['Opportunities','Ranked by fit against your business profile'],
+  detail:['Opportunity','Full evidence, scoring, and commercial analysis'],
+  pipeline:['Pipeline','Every opportunity you\'ve actioned, by status'],
+  profile:['Business profile','This drives every match — nothing here is inferred'],
+  sources:['Data & evidence','What\'s connected, what isn\'t, and why'],
+};
+function renderTopbar(){
+  const key = state.view==='detail' ? 'detail' : state.view;
+  const [title, meta] = TITLES[key];
+  document.getElementById('topbar').innerHTML = `
+    <div class="topbar__title">
+      <h1>${state.view==='detail' && state.selected ? escapeHtml(state.selected.title) : title}</h1>
+      <div class="topbar__meta">${state.view==='detail' && state.selected ? escapeHtml(state.selected.buyer) + ' · ' + escapeHtml(state.selected.location) : meta}</div>
+    </div>
+    <div class="topbar__actions">
+      <span class="proto-badge">${icon('spark')}Prototype · demonstration data</span>
+    </div>
+  `;
+}
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ============ views ============ */
+function openOpp(id){
+  state.selected = OPPS.find(o=>o.id===id);
+  state.view = 'detail';
+  render();
+  window.scrollTo({top:0});
+}
+
+function oppCard(o){
+  const s = statusOf(o);
+  const b = scoreBand(o.score);
+  return `
+    <div class="opp-card" data-open="${o.id}">
+      ${ring(o.score)}
+      <div class="opp-card__main">
+        <div class="opp-card__top">
+          <span class="opp-card__title">${escapeHtml(o.title)}</span>
+          ${statusPill(s)}
+        </div>
+        <div class="opp-card__meta">
+          <span><b>${escapeHtml(o.buyer)}</b></span>
+          <span>${escapeHtml(o.location)} · ${o.distance} mi</span>
+          <span>${o.deadlineLabel}</span>
+        </div>
+        <div class="opp-card__reqs">${escapeHtml(o.reqSummary)}</div>
+        <div class="opp-card__badges">
+          ${badge(o.valueBasis)}
+          <span class="badge badge--calculated">${icon('target')}${o.confidence} confidence</span>
+        </div>
+      </div>
+      <div class="opp-card__side">
+        <div class="opp-card__value mono">${o.valueLabel.split(' – ')[0]}${o.valueLabel.includes('–')?' +':''}</div>
+        <div class="opp-card__action">${escapeHtml(o.action.split('.')[0])}.</div>
+      </div>
+    </div>`;
+}
+function skeletonCard(){
+  return `<div class="skeleton"><div class="skel-block" style="width:56px;height:56px;border-radius:50%;"></div>
+    <div style="display:flex;flex-direction:column;gap:.5rem;"><div class="skel-block" style="height:16px;width:60%;"></div><div class="skel-block" style="height:12px;width:80%;"></div><div class="skel-block" style="height:12px;width:40%;"></div></div>
+    <div class="skel-block" style="width:70px;height:16px;"></div></div>`;
+}
+
+function viewDashboard(){
+  const open = OPPS.filter(o=>['new','interested','contacted'].includes(statusOf(o)));
+  const newCount = OPPS.filter(o=>statusOf(o)==='new').length;
+  const high = open.filter(o=>o.score>=85).length;
+  const knownValue = open.filter(o=>o.commercial.revenue!=null).reduce((s,o)=>s+o.commercial.revenue,0);
+  const unknownCount = open.filter(o=>o.commercial.revenue==null).length;
+  const needsAction = open.filter(o=>o.deadlineDays!=null && o.deadlineDays<=14);
+  const top = [...open].sort((a,b)=>b.score-a.score).slice(0,4);
+
+  return `
+    <div class="stats">
+      <div class="tile"><div class="tile__label">New opportunities</div><div class="tile__value mono">${newCount}</div><div class="tile__sub">this period</div></div>
+      <div class="tile tile--accent"><div class="tile__label">High priority</div><div class="tile__value mono">${high}</div><div class="tile__sub">score 85+</div></div>
+      <div class="tile"><div class="tile__label">Estimated addressable value</div><div class="tile__value mono">${fmtGBP(knownValue*0.92)}–${fmtGBP(knownValue*1.08)}</div><div class="tile__sub">${unknownCount} more with value not yet determinable</div></div>
+      <div class="tile"><div class="tile__label">Requiring action</div><div class="tile__value mono">${needsAction.length}</div><div class="tile__sub">deadline within 14 days</div></div>
+    </div>
+
+    ${needsAction.length ? `<div class="alert">${icon('alert')}<div><b>${needsAction.length} opportunit${needsAction.length===1?'y needs':'ies need'} attention</b> — ${needsAction.map(o=>escapeHtml(o.title.split(' — ')[0])+' ('+o.deadlineLabel.split(' · ')[0]+')').join(', ')}.</div></div>` : ''}
+
+    <div class="section-head">
+      <h2>Top matches</h2>
+      <span class="hint">Sorted by fit score · showing 4 of ${open.length} open opportunities</span>
+    </div>
+    <div class="card-list">${top.map(oppCard).join('')}</div>
+  `;
+}
+
+function viewOpportunities(){
+  const filters = [
+    {id:'all', label:'All'},
+    {id:'high', label:'High fit (85+)'},
+    {id:'open', label:'Open only'},
+  ];
+  let list = OPPS.filter(o=>!['won','lost'].includes(statusOf(o)) || state.feedFilter==='all');
+  if(state.feedFilter==='high') list = list.filter(o=>o.score>=85);
+  if(state.feedFilter==='open') list = list.filter(o=>['new','interested','contacted'].includes(statusOf(o)));
+  list = [...list].sort((a,b)=>b.score-a.score);
+
+  const body = !state.feedLoaded ? Array.from({length:4}).map(skeletonCard).join('')
+    : (list.length ? list.map(oppCard).join('') : `
+      <div class="empty">${icon('target')}<b>No opportunities match this filter</b>
+      <span>This usually means either there's genuinely nothing in scope this week, or your radius/services are set narrowly. Try widening the filter, or review your business profile.</span></div>`);
+
+  return `
+    <div class="section-head">
+      <h2>${list.length} opportunit${list.length===1?'y':'ies'}</h2>
+      <div class="filters"><div class="seg">${filters.map(f=>`<button class="${state.feedFilter===f.id?'active':''}" data-filter="${f.id}">${f.label}</button>`).join('')}</div></div>
+    </div>
+    <div class="card-list" id="feed-body">${body}</div>
+  `;
+}
+
+function barRow(label, value){
+  return `<div class="bar-row"><span>${label}</span><div class="bar-track"><div class="bar-fill" style="width:${value}%"></div></div><span class="bar-val mono">${value}</span></div>`;
+}
+
+function viewDetail(){
+  const o = state.selected;
+  if(!o) { state.view='opportunities'; return viewOpportunities(); }
+  const b = scoreBand(o.score);
+  const s = statusOf(o);
+  const fb = state.feedback[o.id];
+
+  return `
+    <button class="btn btn--ghost btn--sm" data-back style="align-self:flex-start;">${icon('back')}Back to opportunities</button>
+
+    <div class="detail-grid">
+      <div class="stack">
+
+        <div class="panel">
+          <h3>${icon('target')}Overview</h3>
+          <div style="display:flex;gap:1.1rem;align-items:center;">
+            ${ring(o.score, true)}
+            <div style="display:flex;flex-direction:column;gap:.3rem;">
+              <span class="pill pill--${b.c}">${b.label}</span>
+              <span style="font-size:.82rem;color:var(--ink-muted);">${o.confidence} confidence overall · ${o.source}</span>
+            </div>
+          </div>
+          <div class="fact"><span class="fact__label">Buyer</span><span class="fact__value mono">${escapeHtml(o.buyer)}</span></div>
+          <div class="fact"><span class="fact__label">Location</span><span class="fact__value mono">${escapeHtml(o.location)} (${o.distance} mi)</span></div>
+          <div class="fact"><span class="fact__label">Deadline</span><span class="fact__value mono">${o.deadlineLabel}</span></div>
+          <div class="fact"><span class="fact__label">Programme</span><span class="fact__value mono">${o.startLabel}</span></div>
+        </div>
+
+        <div class="panel">
+          <h3>${icon('check')}What we know</h3>
+          ${o.requirements.filter(r=>r.label==='verified').map(r=>`
+            <div class="fact"><span class="fact__label">${escapeHtml(r.field)}</span><span class="fact__value mono">${escapeHtml(r.value)}<span class="fact__src">${escapeHtml(r.src)}</span></span></div>`).join('') || '<div class="fact"><span class="fact__label">No directly verified fields yet</span></div>'}
+        </div>
+
+        <div class="panel">
+          <h3>${icon('wave')}What we estimate</h3>
+          ${o.requirements.filter(r=>r.label!=='verified').map(r=>`
+            <div class="fact"><span class="fact__label">${escapeHtml(r.field)} ${badge(r.label)}</span><span class="fact__value mono">${escapeHtml(r.value)}<span class="fact__src">${escapeHtml(r.src)}</span></span></div>`).join('') || '<div class="fact"><span class="fact__label">Nothing estimated — every field above is directly sourced</span></div>'}
+        </div>
+
+        <div class="panel">
+          <h3>${icon('route')}Why you match</h3>
+          ${barRow('Service fit', o.c.service)}
+          ${barRow('Fleet fit', o.c.fleet)}
+          ${barRow('Geography fit', o.c.geography)}
+          ${barRow('Capacity fit', o.c.capacity)}
+          ${barRow('Commercial fit', o.c.commercial)}
+          ${barRow('Sector fit', o.c.sector)}
+          <div style="font-size:.76rem;color:var(--ink-muted);border-top:1px solid var(--border);padding-top:.6rem;">Weighted: service 25% · fleet 20% · geography 20% · capacity 15% · commercial 10% · sector 10% — a configurable model, tuned from your feedback over time.</div>
+        </div>
+
+        <div class="panel">
+          <h3>${icon('pound')}Commercial analysis</h3>
+          ${o.commercial.revenue==null ? `
+            <div class="fact"><span class="fact__label">Estimated revenue</span><span class="fact__value mono">${badge('unknown')}</span></div>
+            <div style="font-size:.82rem;color:var(--ink-secondary);">${o.commercial.note}</div>
+          ` : `
+            <div class="fact"><span class="fact__label">Estimated loads</span><span class="fact__value mono">${o.commercial.loads ?? '—'} ${badge('calculated')}</span></div>
+            <div class="fact"><span class="fact__label">Estimated revenue</span><span class="fact__value mono">${fmtGBP(o.commercial.revenue)} ${badge(o.commercial.revenueLabel)}</span></div>
+            <div class="fact"><span class="fact__label">Estimated cost</span><span class="fact__value mono">${o.commercial.cost!=null?fmtGBP(o.commercial.cost)+' ':''}${o.commercial.cost!=null?badge('calculated'):badge('unknown')}</span></div>
+            <div class="fact"><span class="fact__label">Contribution</span><span class="fact__value mono">${o.commercial.contribution!=null?fmtGBP(o.commercial.contribution):'—'}</span></div>
+            <div class="fact"><span class="fact__label">Margin</span><span class="fact__value mono">${o.commercial.margin!=null?o.commercial.margin+'%':'—'}</span></div>
+            <div style="font-size:.78rem;color:var(--ink-muted);">${o.commercial.note} · rates from your business profile: £${state.profile.rates.pricePerTonne}/t, ${state.profile.rates.payload}t payload, £${state.profile.rates.fuelPerMile}/mi fuel, £${state.profile.rates.driverPerDay}/day driver.</div>
+          `}
+        </div>
+
+        <div class="panel">
+          <h3>${icon('file')}Source evidence</h3>
+          <div class="table-wrap">
+            <table class="evi-table">
+              <thead><tr><th>Claim</th><th>Value</th><th>Provenance</th><th>Source</th></tr></thead>
+              <tbody>
+                ${o.evidence.map(e=>`<tr>
+                  <td>${escapeHtml(e.claim)}</td>
+                  <td class="mono">${escapeHtml(e.value)}</td>
+                  <td>${badge(e.label)}</td>
+                  <td>${e.url ? `<a class="evi-src" href="#" onclick="return false;">${e.src}</a>` : `<span style="color:var(--ink-muted);font-size:.78rem;">${escapeHtml(e.src)}</span>`}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="stack">
+        <div class="panel">
+          <h3>${icon('flag')}Recommended action</h3>
+          <p style="margin:0;font-size:.88rem;color:var(--ink-secondary);">${escapeHtml(o.action)}</p>
+        </div>
+
+        <div class="panel action-box">
+          <h3>Status</h3>
+          <div class="status-row">
+            ${['new','interested','contacted','won','lost','not_relevant'].map(st=>`
+              <button class="status-btn ${s===st?'active':''}" data-status="${st}">${st.replace('_',' ')}</button>`).join('')}
+          </div>
+          <div class="feedback-box">
+            <h3 style="font-size:.85rem;">Was this match correct?</h3>
+            <div class="feedback-row">
+              <button class="fb-btn ${fb && fb.correct===true?'selected':''}" data-fb="true">${icon('thumbUp')}Yes, accurate</button>
+              <button class="fb-btn ${fb && fb.correct===false?'selected':''}" data-fb="false">${icon('thumbDown')}No, off</button>
+            </div>
+            <textarea id="fb-note" placeholder="Optional note — helps tune future scoring">${fb && fb.note ? escapeHtml(fb.note) : ''}</textarea>
+            <button class="btn btn--sm" data-fb-save>Save feedback</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function pcard(o){
+  return `<div class="pcard" data-open="${o.id}">
+    <div class="pcard__title">${escapeHtml(o.title.split(' — ')[0])}</div>
+    <div class="pcard__meta"><span>${o.score} fit</span><span>${o.valueLabel.split(' ')[0]}${o.valueLabel.includes('–')?'+':''}</span></div>
+  </div>`;
+}
+function viewPipeline(){
+  const cols = [
+    {id:'new', label:'New'}, {id:'interested', label:'Interested'}, {id:'contacted', label:'Contacted'},
+    {id:'won', label:'Won'}, {id:'lost', label:'Lost'}, {id:'not_relevant', label:'Not relevant'},
+  ];
+  return `<div class="pipeline">
+    ${cols.map(c=>{
+      const items = OPPS.filter(o=>statusOf(o)===c.id);
+      return `<div class="pcol">
+        <div class="pcol__head"><span>${c.label}</span><span class="count mono">${items.length}</span></div>
+        ${items.length ? items.map(pcard).join('') : `<div class="pcol-empty">Nothing here yet</div>`}
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function viewProfile(){
+  const p = state.profile;
+  return `
+    <div class="panel">
+      <h3>${icon('user')}Company</h3>
+      <div class="form-grid">
+        <div class="field"><label>Company name</label><input type="text" id="f-name" value="${escapeHtml(p.name)}"></div>
+        <div class="field"><label>Base location</label><input type="text" id="f-base" value="${escapeHtml(p.base)}"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Services</h3>
+      <div class="field"><label class="hint" style="font-weight:400;">Select every service you can genuinely deliver — this gates matching before anything else does.</label></div>
+      <div class="chip-input">${ALL_SERVICES.map(sv=>`<span class="chip ${p.services.includes(sv)?'on':''}" data-chip="service" data-val="${sv}">${p.services.includes(sv)?icon('check'):''}${sv}</span>`).join('')}</div>
+    </div>
+
+    <div class="panel">
+      <h3>Fleet</h3>
+      <div id="fleet-rows" style="display:flex;flex-direction:column;gap:.5rem;">
+        ${p.fleet.map((f,i)=>`<div class="fleet-row">
+          <input type="text" data-fleet-type="${i}" value="${escapeHtml(f.type)}">
+          <input type="number" data-fleet-count="${i}" value="${f.count}" min="0">
+          <button class="btn btn--ghost btn--sm" data-fleet-remove="${i}">Remove</button>
+        </div>`).join('')}
+      </div>
+      <button class="btn btn--ghost btn--sm" id="fleet-add" style="align-self:flex-start;">+ Add vehicle type</button>
+      <div class="fleet-total mono">Total fleet: ${p.fleet.reduce((s,f)=>s+f.count,0)} vehicles</div>
+    </div>
+
+    <div class="panel">
+      <h3>Geography &amp; capacity</h3>
+      <div class="form-grid">
+        <div class="field"><label>Operating radius (miles)</label><input type="number" id="f-radius" value="${p.radius}"></div>
+        <div class="field"><label>Vehicles currently available</label><input type="number" id="f-capacity" value="${p.capacityAvailable}"></div>
+        <div class="field"><label>Minimum attractive opportunity value (£)</label><input type="number" id="f-minvalue" value="${p.minValue}"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>${icon('pound')}Commercial rates</h3>
+      <div class="field"><span class="hint" style="font-weight:400;">Used to calculate every commercial estimate. Never invented — leave blank and estimates show as Unknown instead of a guess.</span></div>
+      <div class="form-grid">
+        <div class="field"><label>Average payload (tonnes)</label><input type="number" id="f-payload" value="${p.rates.payload}"></div>
+        <div class="field"><label>Price per tonne (£)</label><input type="number" id="f-pricetonne" value="${p.rates.pricePerTonne}" step="0.1"></div>
+        <div class="field"><label>Price per mile (£)</label><input type="number" id="f-pricemile" value="${p.rates.pricePerMile}" step="0.1"></div>
+        <div class="field"><label>Fuel cost per mile (£)</label><input type="number" id="f-fuel" value="${p.rates.fuelPerMile}" step="0.05"></div>
+        <div class="field"><label>Driver cost per day (£)</label><input type="number" id="f-driver" value="${p.rates.driverPerDay}"></div>
+        <div class="field"><label>Minimum margin (%)</label><input type="number" id="f-margin" value="${p.rates.minMargin}"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Preferred sectors</h3>
+      <div class="chip-input">${ALL_SECTORS.map(sv=>`<span class="chip ${p.sectors.includes(sv)?'on':''}" data-chip="sector" data-val="${sv}">${p.sectors.includes(sv)?icon('check'):''}${sv}</span>`).join('')}</div>
+    </div>
+
+    <button class="btn" id="profile-save" style="align-self:flex-start;">${icon('check')}Save profile</button>
+  `;
+}
+
+function viewSources(){
+  return `
+    <div class="section-head"><h2>Connected sources</h2><span class="hint">Tier 1 sources only — see Environment Setup for the full decision record</span></div>
+    <div class="card-list">
+      ${SOURCES.map(s=>`
+        <div class="src-card">
+          <div>
+            <div class="src-name">${s.status==='active'?icon('check'):icon('dash')}${s.name}</div>
+            <div class="src-meta">${s.desc}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:.3rem;">
+            <span class="pill pill--${s.status==='active'?'good':'muted'}">${s.status==='active'?'Active':'Not connected'}</span>
+            <span class="src-meta">${s.synced ? 'Synced '+s.synced : s.licence}</span>
+          </div>
+        </div>`).join('')}
+    </div>
+
+    <div class="section-head"><h2>How to read provenance</h2></div>
+    <div class="legend">
+      <div class="legend-item">${icon('check')}<div><b>Verified</b><p>Directly stated in a cited public source, with a source link.</p></div></div>
+      <div class="legend-item">${icon('calc')}<div><b>Calculated</b><p>Deterministically computed from verified inputs — e.g. tonnes ÷ payload.</p></div></div>
+      <div class="legend-item">${icon('person')}<div><b>Your data</b><p>Provided by you in your business profile, not derived from public data.</p></div></div>
+      <div class="legend-item">${icon('wave')}<div><b>Estimated / inferred</b><p>AI-derived from indirect evidence — never presented as a fact.</p></div></div>
+      <div class="legend-item">${icon('dash')}<div><b>Unknown</b><p>Insufficient information. Shown honestly rather than guessed.</p></div></div>
+    </div>
+
+    <div class="alert" style="background:var(--info-soft);border-color:var(--info);color:var(--info-ink);">
+      ${icon('file')}
+      <div><b>This is a prototype.</b> All opportunities shown use clearly-labelled demonstration data styled on these sources' real formats and licensing terms. No live ingestion is connected yet — see the project's <span class="mono">docs/EXECUTIVE_SUMMARY.md</span> for the validation plan before this connects to production data.</div>
+    </div>
+  `;
+}
+
+/* ============ render dispatch ============ */
+function render(){
+  renderNav();
+  renderTopbar();
+  const view = document.getElementById('view');
+  if(state.view==='dashboard') view.innerHTML = viewDashboard();
+  else if(state.view==='opportunities') view.innerHTML = viewOpportunities();
+  else if(state.view==='detail') view.innerHTML = viewDetail();
+  else if(state.view==='pipeline') view.innerHTML = viewPipeline();
+  else if(state.view==='profile') view.innerHTML = viewProfile();
+  else if(state.view==='sources') view.innerHTML = viewSources();
+  bindView();
+}
+
+function bindView(){
+  document.querySelectorAll('[data-open]').forEach(el=> el.addEventListener('click', ()=> openOpp(el.dataset.open)));
+  const back = document.querySelector('[data-back]');
+  if(back) back.addEventListener('click', ()=>{ state.view='opportunities'; render(); });
+
+  document.querySelectorAll('[data-filter]').forEach(el=> el.addEventListener('click', ()=>{ state.feedFilter = el.dataset.filter; render(); }));
+
+  document.querySelectorAll('[data-status]').forEach(el=> el.addEventListener('click', ()=>{
+    state.statuses[state.selected.id] = el.dataset.status;
+    saveState();
+    toast('Marked as ' + el.dataset.status.replace('_',' '));
+    render();
+    openOpp(state.selected.id);
+  }));
+
+  document.querySelectorAll('[data-fb]').forEach(el=> el.addEventListener('click', ()=>{
+    document.querySelectorAll('[data-fb]').forEach(b=>b.classList.remove('selected'));
+    el.classList.add('selected');
+    el.dataset.pending = 'true';
+    el.__pendingCorrect = el.dataset.fb === 'true';
+    window.__pendingFb = el.dataset.fb === 'true';
+  }));
+  const fbSave = document.querySelector('[data-fb-save]');
+  if(fbSave) fbSave.addEventListener('click', ()=>{
+    const selectedBtn = document.querySelector('[data-fb].selected');
+    const correct = selectedBtn ? selectedBtn.dataset.fb === 'true' : (state.feedback[state.selected.id]?.correct ?? true);
+    const note = document.getElementById('fb-note').value;
+    state.feedback[state.selected.id] = {correct, note};
+    saveState();
+    toast('Feedback saved');
+  });
+
+  // profile page
+  const nameEl = document.getElementById('f-name');
+  if(nameEl){
+    document.querySelectorAll('[data-chip]').forEach(el=> el.addEventListener('click', ()=>{
+      const kind = el.dataset.chip, val = el.dataset.val;
+      const arr = kind==='service' ? state.profile.services : state.profile.sectors;
+      const idx = arr.indexOf(val);
+      if(idx>-1) arr.splice(idx,1); else arr.push(val);
+      render();
+    }));
+    document.querySelectorAll('[data-fleet-remove]').forEach(el=> el.addEventListener('click', ()=>{
+      state.profile.fleet.splice(Number(el.dataset.fleetRemove),1); render();
+    }));
+    const fleetAdd = document.getElementById('fleet-add');
+    if(fleetAdd) fleetAdd.addEventListener('click', ()=>{ state.profile.fleet.push({type:'New vehicle type', count:0}); render(); });
+
+    const save = document.getElementById('profile-save');
+    save.addEventListener('click', ()=>{
+      const p = state.profile;
+      p.name = nameEl.value; p.base = document.getElementById('f-base').value;
+      p.radius = Number(document.getElementById('f-radius').value)||0;
+      p.capacityAvailable = Number(document.getElementById('f-capacity').value)||0;
+      p.minValue = Number(document.getElementById('f-minvalue').value)||0;
+      p.rates.payload = Number(document.getElementById('f-payload').value)||0;
+      p.rates.pricePerTonne = Number(document.getElementById('f-pricetonne').value)||0;
+      p.rates.pricePerMile = Number(document.getElementById('f-pricemile').value)||0;
+      p.rates.fuelPerMile = Number(document.getElementById('f-fuel').value)||0;
+      p.rates.driverPerDay = Number(document.getElementById('f-driver').value)||0;
+      p.rates.minMargin = Number(document.getElementById('f-margin').value)||0;
+      document.querySelectorAll('[data-fleet-type]').forEach(el=> p.fleet[Number(el.dataset.fleetType)].type = el.value);
+      document.querySelectorAll('[data-fleet-count]').forEach(el=> p.fleet[Number(el.dataset.fleetCount)].count = Number(el.value)||0);
+      saveState();
+      toast('Business profile saved');
+      render();
+    });
+  }
+}
+
+render();
+setTimeout(()=>{ state.feedLoaded = true; if(state.view==='opportunities' || state.view==='dashboard') render(); }, 420);
+</script>
