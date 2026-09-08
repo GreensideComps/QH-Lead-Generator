@@ -1,4 +1,5 @@
 import { layout, escapeHtml, fmtGBP, badge, scoreBand, type NavContext } from "./layout.js";
+import { csrfField } from "../csrf.js";
 
 interface DetailData {
   opportunity: any;
@@ -23,6 +24,7 @@ export function renderOpportunityDetail(nav: NavContext, data: DetailData): stri
         <div style="color:var(--ink-muted);margin-top:.3rem;">${escapeHtml(o.buyer_name)} · ${escapeHtml(o.location_text)}</div>
       </div>
       <form method="post" action="/opportunities/${o.id}/status" style="display:flex;gap:.4rem;flex-wrap:wrap;">
+        ${csrfField(nav.csrfToken)}
         ${["new", "interested", "contacted", "won", "lost", "not_relevant"]
           .map(
             (s) =>
@@ -55,7 +57,7 @@ export function renderOpportunityDetail(nav: NavContext, data: DetailData): stri
           ${commercialSection(c)}
         </div>
 
-        ${!unlocked ? unlockCard(o.id) : ""}
+        ${!unlocked ? unlockCard(o.id, nav.csrfToken) : ""}
 
         <div class="card">
           <h3 style="font-size:.92rem;margin-bottom:.5rem;">Why this matches</h3>
@@ -109,7 +111,7 @@ function lockedFact(label = "Unlock to view"): string {
   return `<span style="color:var(--ink-muted);">🔒 ${escapeHtml(label)}</span>`;
 }
 
-function unlockCard(opportunityId: string): string {
+function unlockCard(opportunityId: string, csrfToken: string): string {
   return `
     <div class="card" style="border-color:var(--accent);">
       <h3 style="font-size:.92rem;margin-bottom:.4rem;">Unlock the full opportunity</h3>
@@ -121,6 +123,7 @@ function unlockCard(opportunityId: string): string {
         <li>A synthesised recommendation and next action</li>
       </ul>
       <form method="post" action="/opportunities/${opportunityId}/unlock">
+        ${csrfField(csrfToken)}
         <button class="btn" type="submit">Unlock this opportunity (1 credit)</button>
       </form>
     </div>

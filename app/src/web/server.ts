@@ -1,6 +1,8 @@
 import "dotenv/config";
 import express from "express";
 import cookieSession from "cookie-session";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { attemptLogin, requireAuth, currentUser } from "./auth.js";
 import { listOpportunities, getOpportunityDetail, dashboardStats, updateStatus, getCreditBalance } from "./queries.js";
 import { renderLogin } from "./render/login.js";
@@ -13,8 +15,11 @@ import { debitForUnlock, alreadyUnlocked, InsufficientCreditsError } from "../cr
 import { synthesizeIntelligence } from "../intelligence/synthesize.js";
 import { createCheckoutSession, handleStripeWebhook, isStripeConfigured, StripeNotConfiguredError } from "../billing/stripe.js";
 import { withTenant } from "../db/withTenant.js";
+import { requireEnv } from "../db/pool.js";
+import { ensureCsrfToken, verifyCsrf, csrfField } from "./csrf.js";
 
 const app = express();
+const isProduction = process.env.NODE_ENV === "production";
 
 // Stripe webhook needs the raw body for signature verification — must be
 // registered BEFORE express.urlencoded()/express.json() touch the body.
@@ -33,18 +38,61 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
   }
 });
 
+// Fails loudly rather than silently signing sessions with a guessable
+// default — the same discipline requireEnv already applies to DATABASE_URL.
+// A missing SESSION_SECRET would otherwise let anyone who has read this
+// file's git history forge a session cookie for any business.
+const SESSION_SECRET = requireEnv("SESSION_SECRET");
+
+app.use(
+  helmet({
+    // This app is plain server-rendered HTML with an inline <style> block
+    // and no client-side JS at all (every state change is a form POST) —
+    // so script-src can be locked down hard, while style-src needs
+    // 'unsafe-inline' for that block plus the Google Fonts stylesheet.
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'none'"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        imgSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'none'"],
+        formAction: ["'self'"],
+      },
+    },
+  }),
+);
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(
   cookieSession({
     name: "groundline_session",
-    keys: [process.env.SESSION_SECRET ?? "insecure-dev-default"],
+    keys: [SESSION_SECRET],
     maxAge: 7 * 24 * 60 * 60 * 1000,
+    sameSite: "lax",
+    secure: isProduction,
   }),
 );
+app.use(ensureCsrfToken);
 
-function navFor(businessName: string, balance: number, active: "discover" | "my-opportunities" | "billing") {
-  return { businessName, creditBalance: balance, activeNav: active } as const;
+// Login is the one route an unauthenticated party can hit repeatedly —
+// throttle credential-guessing without needing a shared store (single
+// dev/staging instance today; swap the store if this ever runs behind
+// multiple app instances).
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: "Too many login attempts. Please wait a few minutes and try again.",
+});
+
+function navFor(req: express.Request, businessName: string, balance: number, active: "discover" | "my-opportunities" | "billing") {
+  return { businessName, creditBalance: balance, activeNav: active, csrfToken: (req as any).session.csrfToken } as const;
 }
 
 app.get("/", (req, res) => {
@@ -52,14 +100,14 @@ app.get("/", (req, res) => {
 });
 
 app.get("/login", (req, res) => {
-  res.send(renderLogin());
+  res.send(renderLogin((req as any).session.csrfToken));
 });
 
-app.post("/login", async (req, res) => {
+app.post("/login", loginLimiter, verifyCsrf, async (req, res) => {
   const { email, password } = req.body;
   const user = await attemptLogin(email, password);
   if (!user) {
-    res.status(401).send(renderLogin("Incorrect email or password."));
+    res.status(401).send(renderLogin((req as any).session.csrfToken, "Incorrect email or password."));
     return;
   }
   (req as any).session.userId = user.userId;
@@ -69,7 +117,7 @@ app.post("/login", async (req, res) => {
   res.redirect("/my-opportunities");
 });
 
-app.post("/logout", (req, res) => {
+app.post("/logout", verifyCsrf, (req, res) => {
   (req as any).session = null;
   res.redirect("/login");
 });
@@ -81,7 +129,7 @@ app.get("/my-opportunities", requireAuth, async (req, res) => {
     dashboardStats(user.businessId),
     getCreditBalance(user.businessId),
   ]);
-  res.send(renderMyOpportunities(navFor(user.businessName, balance, "my-opportunities"), items, stats));
+  res.send(renderMyOpportunities(navFor(req, user.businessName, balance, "my-opportunities"), items, stats));
 });
 
 app.get("/discover", requireAuth, async (req, res) => {
@@ -96,7 +144,7 @@ app.get("/discover", requireAuth, async (req, res) => {
     getCreditBalance(user.businessId),
   ]);
   res.send(
-    renderDiscover(navFor(user.businessName, balance, "discover"), items, {
+    renderDiscover(navFor(req, user.businessName, balance, "discover"), items, {
       search,
       minScore: minScore !== undefined ? String(minScore) : undefined,
     }),
@@ -115,10 +163,10 @@ app.get("/opportunities/:id", requireAuth, async (req, res) => {
   if (data.unlock) await recordEvent(user.businessId, user.userId, "recommended_action_viewed", req.params.id);
 
   const balance = await getCreditBalance(user.businessId);
-  res.send(renderOpportunityDetail(navFor(user.businessName, balance, "discover"), data));
+  res.send(renderOpportunityDetail(navFor(req, user.businessName, balance, "discover"), data));
 });
 
-app.post("/opportunities/:id/status", requireAuth, async (req, res) => {
+app.post("/opportunities/:id/status", requireAuth, verifyCsrf, async (req, res) => {
   const user = currentUser(req)!;
   const status = String(req.body.status);
   await updateStatus(user.businessId, req.params.id, status);
@@ -126,7 +174,7 @@ app.post("/opportunities/:id/status", requireAuth, async (req, res) => {
   res.redirect(`/opportunities/${req.params.id}`);
 });
 
-app.post("/opportunities/:id/unlock", requireAuth, async (req, res) => {
+app.post("/opportunities/:id/unlock", requireAuth, verifyCsrf, async (req, res) => {
   const user = currentUser(req)!;
   const opportunityId = req.params.id;
 
@@ -192,10 +240,10 @@ app.get("/billing", requireAuth, async (req, res) => {
     );
     return rows;
   });
-  res.send(renderBilling(navFor(user.businessName, balance, "billing"), balance, transactions));
+  res.send(renderBilling(navFor(req, user.businessName, balance, "billing"), balance, transactions));
 });
 
-app.post("/billing/checkout", requireAuth, async (req, res) => {
+app.post("/billing/checkout", requireAuth, verifyCsrf, async (req, res) => {
   const user = currentUser(req)!;
   if (!isStripeConfigured()) {
     res.status(501).send("Stripe is not configured in this environment. See docs/architecture/04-implementation-status.md.");

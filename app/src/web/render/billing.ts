@@ -1,5 +1,6 @@
 import { layout, escapeHtml, type NavContext } from "./layout.js";
 import { CREDIT_PACKS, isStripeConfigured } from "../../billing/stripe.js";
+import { csrfField } from "../csrf.js";
 
 export function renderBilling(nav: NavContext, balance: number, transactions: any[]): string {
   const stripeReady = isStripeConfigured();
@@ -23,6 +24,7 @@ export function renderBilling(nav: NavContext, balance: number, transactions: an
         .map(
           ([id, pack]) => `
         <form method="post" action="/billing/checkout" class="card" style="flex:1;min-width:220px;">
+          ${csrfField(nav.csrfToken)}
           <input type="hidden" name="packId" value="${id}">
           <div style="font-family:'Archivo',system-ui,sans-serif;font-weight:700;">${pack.label}</div>
           <div class="mono" style="font-size:1.4rem;margin:.4rem 0;">£${(pack.unitAmountGbp / 100).toFixed(2)}</div>

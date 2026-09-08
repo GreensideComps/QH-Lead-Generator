@@ -23,7 +23,7 @@ export const appPool = new Pool({
   connectionString: requireEnv("DATABASE_URL_APP"),
 });
 
-function requireEnv(name: string): string {
+export function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
     throw new Error(

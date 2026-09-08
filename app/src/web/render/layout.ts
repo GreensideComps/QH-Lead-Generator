@@ -32,6 +32,7 @@ export interface NavContext {
   businessName: string;
   creditBalance: number;
   activeNav: "discover" | "my-opportunities" | "billing" | "other";
+  csrfToken: string;
 }
 
 export function layout(title: string, bodyHtml: string, nav?: NavContext): string {
@@ -40,13 +41,15 @@ export function layout(title: string, bodyHtml: string, nav?: NavContext): strin
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Groundline matches UK quarrying, aggregates and haulage businesses to commercial opportunities from live procurement data, with every figure traced back to its source.">
 <title>${escapeHtml(title)} · Groundline</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <style>${STYLES}</style>
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to content</a>
 ${nav ? navHtml(nav) : ""}
-<main class="content">${bodyHtml}</main>
+<main id="main" class="content">${bodyHtml}</main>
 </body>
 </html>`;
 }
@@ -65,7 +68,7 @@ function navHtml(nav: NavContext): string {
     <div class="topbar__right">
       <span class="pill pill--muted">${escapeHtml(nav.businessName)}</span>
       <span class="pill pill--accent">${nav.creditBalance} credits</span>
-      <form method="post" action="/logout" style="display:inline"><button class="btn btn--ghost btn--sm" type="submit">Log out</button></form>
+      <form method="post" action="/logout" style="display:inline"><input type="hidden" name="_csrf" value="${nav.csrfToken}"><button class="btn btn--ghost btn--sm" type="submit">Log out</button></form>
     </div>
   </div>`;
 }
@@ -74,6 +77,8 @@ const STYLES = `
 :root{--ground:#eef1ef;--surface:#fff;--surface-2:#e5e9e5;--surface-3:#dde2dd;--ink:#1a1d1b;--ink-secondary:#52564f;--ink-muted:#82877e;--border:#d5dad2;--border-strong:#c2c8bd;--accent:#c07a24;--accent-strong:#9c5f13;--accent-soft:#f2e2c7;--accent-ink:#5a3a0c;--good:#2e7d4f;--good-soft:#dbeee1;--good-ink:#1f5536;--warn:#a17a0c;--warn-soft:#f1e6c4;--warn-ink:#725509;--critical:#b23a2e;--critical-soft:#f5dad5;--critical-ink:#7e2a21;--info:#345f89;--info-soft:#dde6ee;--info-ink:#25445f;}
 *{box-sizing:border-box}
 body{margin:0;background:var(--ground);color:var(--ink);font-family:'Public Sans',system-ui,sans-serif;font-size:14.5px;line-height:1.5}
+.skip-link{position:absolute;left:-9999px;top:0;background:var(--accent);color:#fff;padding:.6rem 1rem;border-radius:0 0 8px 0;z-index:20;font-weight:700;font-size:.85rem}
+.skip-link:focus{left:0}
 h1,h2,h3{font-family:'Archivo',system-ui,sans-serif;font-weight:800;letter-spacing:-.01em;margin:0}
 .mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
 a{color:inherit}
@@ -108,6 +113,7 @@ a{color:inherit}
 .ring::after{content:'';position:absolute;inset:6px;border-radius:50%;background:var(--surface)}
 .ring__num{position:absolute;inset:0;display:grid;place-items:center;font-family:'IBM Plex Mono',ui-monospace,monospace;font-weight:600;font-size:.92rem;z-index:1}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:.8rem}
+@media (max-width:640px){.stats{grid-template-columns:repeat(2,1fr)}.content{padding:1.25rem 1rem 2rem}}
 .tile{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem 1.1rem}
 .tile__label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-muted)}
 .tile__value{font-family:'IBM Plex Mono',ui-monospace,monospace;font-weight:600;font-size:1.4rem}

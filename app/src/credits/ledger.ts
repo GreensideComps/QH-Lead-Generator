@@ -29,6 +29,14 @@ export async function getBalance(businessId: string): Promise<number> {
  * (via withTenant) so a race between two unlock requests can't double-spend
  * a balance. Throws InsufficientCreditsError without writing anything if
  * the balance is too low — never grants an unlock "on credit".
+ *
+ * Idempotent per (opportunityId, businessId): the `for update` lock on the
+ * credits row serializes concurrent unlock attempts for this business, so
+ * the existence check below is race-safe — a duplicate/replayed unlock
+ * request (double-click, browser resubmit, or a replayed POST) is a no-op,
+ * never a second charge. The caller's own `alreadyUnlocked()` check is a
+ * fast-path that avoids the AI synthesis call in the common case; this is
+ * the actual safety net for the money movement.
  */
 export async function debitForUnlock(
   businessId: string,
@@ -41,6 +49,15 @@ export async function debitForUnlock(
       [businessId],
     );
     const balance = rows[0]?.balance ?? 0;
+
+    const existing = await client.query(
+      `select 1 from intelligence_unlocks where opportunity_id = $1 and business_id = $2`,
+      [opportunityId, businessId],
+    );
+    if (existing.rowCount) {
+      return { newBalance: balance };
+    }
+
     if (balance < CREDIT_COST_PER_UNLOCK) {
       throw new InsufficientCreditsError(balance, CREDIT_COST_PER_UNLOCK);
     }

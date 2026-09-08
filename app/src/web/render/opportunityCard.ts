@@ -20,7 +20,7 @@ export function opportunityCard(item: OpportunityListItem): string {
     </div>
     <div style="text-align:right;">
       <div class="mono" style="font-weight:600;">${fmtGBP(item.estimatedRevenue)}</div>
-      <div style="font-size:.7rem;color:var(--ink-muted);text-transform:uppercase;">${item.revenueBasis}</div>
+      <div style="font-size:.7rem;color:var(--ink-muted);text-transform:uppercase;">${escapeHtml(item.revenueBasis)}</div>
     </div>
   </a>`;
 }
