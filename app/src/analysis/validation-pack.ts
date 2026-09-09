@@ -17,8 +17,19 @@ import { categoriseDemand } from "../ingestion/demandCategory.js";
  * because "AI inference" would misrepresent the provenance.
  */
 
-const OPERATOR = { name: "Midlands haulage operator (archetype)", base: "Birmingham", radiusMiles: 50 };
+/** Five operator bases. Each opportunity is measured to its NEAREST base, so
+ *  the pack represents "an operator in one of these towns" rather than one
+ *  city's view — the brief asks for geographic distribution. */
+const BASES = ["Birmingham", "Coventry", "Leicester", "Stoke-on-Trent", "Stafford"];
+const RADIUS_MILES = 50;
 const TARGET = 50;
+/** No single buyer may supply more than this many cards. Without it, one
+ *  county council's resurfacing programme fills a third of the pack and the
+ *  interview tests that programme rather than Groundline. */
+const MAX_PER_BUYER = 3;
+/** Opportunities beyond this are excluded from the pack outright, however
+ *  well documented — an operator cannot serve them. */
+const MAX_PACK_MILES = 75;
 
 interface Row {
   id: string;
@@ -64,27 +75,69 @@ async function main() {
     order by published_date desc nulls last
   `);
 
-  const base = await geocodePlace(OPERATOR.base);
-  if (!base) throw new Error("Could not geocode operator base");
+  const baseCoords = new Map<string, LatLng>();
+  for (const b of BASES) {
+    const ll = await geocodePlace(b);
+    if (ll) baseCoords.set(b, ll);
+  }
+  if (baseCoords.size === 0) throw new Error("Could not geocode any operator base");
 
   const geo = new Map<string, LatLng | null>();
-  const withDistance: Array<Row & { distance: number | null; place: string | null }> = [];
+  const withDistance: Array<Row & { distance: number | null; nearestBase: string | null; locSpecific: boolean }> = [];
   for (const r of rows) {
     // Prefer the project delivery location over the buyer's address when the
     // notice gives one — the buyer address is often a county hall miles away.
-    const candidate = locationIsSpecific(r.delivery_location) ? r.delivery_location : r.location_text;
+    const locSpecific = locationIsSpecific(r.delivery_location);
+    const candidate = locSpecific ? r.delivery_location : r.location_text;
     const place = primaryPlaceName(candidate ?? null);
     if (place && !geo.has(place)) geo.set(place, await geocodePlace(place));
     const ll = place ? geo.get(place) ?? null : null;
-    withDistance.push({ ...r, distance: ll ? haversineMiles(base, ll) : null, place });
+
+    let best: { base: string; d: number } | null = null;
+    if (ll) {
+      for (const [b, bll] of baseCoords) {
+        const d = haversineMiles(bll, ll);
+        if (!best || d < best.d) best = { base: b, d };
+      }
+    }
+    withDistance.push({ ...r, distance: best?.d ?? null, nearestBase: best?.base ?? null, locSpecific });
   }
 
-  // The 50 nearest to the operator. Distances are reported honestly, including
-  // any that fall outside the nominal radius.
-  const selected = withDistance
-    .filter((r) => r.distance !== null)
-    .sort((a, b) => (a.distance ?? 1e9) - (b.distance ?? 1e9))
-    .slice(0, TARGET);
+  /** Quality score. The brief is explicit: do not pad the pack with weak
+   *  opportunities to reach 50. Ranking by quality rather than proximity means
+   *  the interview tests the best case Groundline can currently produce — if
+   *  operators reject THESE, the weaker ones are irrelevant. */
+  const score = (r: (typeof withDistance)[number]): number => {
+    let s = 0;
+    if (r.demand_basis === "direct") s += 3; // scheme IS this work, not assumed downstream
+    if (r.locSpecific) s += 3; // a real project location, not a county hall
+    if (r.supplier_name && !NOT_A_CONTRACTOR.test(r.supplier_name)) s += 2;
+    if (r.bidders && r.bidders > 0) s += 1; // a genuinely competed award
+    if ((r.distance ?? 999) <= RADIUS_MILES) s += 2;
+    if (r.demand_categories.includes("muck_away") || r.demand_categories.includes("earthworks")) s += 1;
+    return s;
+  };
+
+  const perBuyer = new Map<string, number>();
+  const selected: typeof withDistance = [];
+  for (const r of withDistance
+    .filter(
+      (r) =>
+        r.distance !== null &&
+        // Hard geographic gate FIRST. Quality ranking alone pulled in
+        // excellent Scottish awards 400+ miles away — irrelevant to a
+        // Midlands operator no matter how well-documented they are.
+        r.distance <= MAX_PACK_MILES &&
+        r.supplier_name &&
+        !NOT_A_CONTRACTOR.test(r.supplier_name),
+    )
+    .sort((a, b) => score(b) - score(a) || (a.distance ?? 1e9) - (b.distance ?? 1e9))) {
+    const k = (r.buyer_name ?? "unknown").toLowerCase();
+    if ((perBuyer.get(k) ?? 0) >= MAX_PER_BUYER) continue;
+    perBuyer.set(k, (perBuyer.get(k) ?? 0) + 1);
+    selected.push(r);
+    if (selected.length >= TARGET) break;
+  }
 
   // ---- metrics computable from data alone ------------------------------
   const { rows: [span] } = await servicePool.query<{ months: string }>(`
@@ -92,18 +145,31 @@ async function main() {
     from procurement where notice_stage='award' and array_length(demand_categories,1) > 0`);
   const months = Number(span?.months ?? 1);
 
-  const inRadius = withDistance.filter((r) => r.distance !== null && r.distance <= OPERATOR.radiusMiles);
+  const inRadius = withDistance.filter((r) => r.distance !== null && r.distance <= RADIUS_MILES);
+  // How many each individual base sees within its own radius.
+  const perBaseCounts = [...baseCoords.entries()].map(
+    ([, bll]) =>
+      withDistance.filter((r) => {
+        const place = primaryPlaceName((r.locSpecific ? r.delivery_location : r.location_text) ?? null);
+        const ll = place ? geo.get(place) : null;
+        return ll ? haversineMiles(bll, ll) <= RADIUS_MILES : false;
+      }).length,
+  );
   const pct = (n: number, d: number) => (d ? Math.round((100 * n) / d) : 0);
 
   const m = {
     months,
-    densityPerMonth: (inRadius.length / months).toFixed(1),
+    // Per-operator density. NOT total/5 — the five bases sit in overlapping
+    // territory (Birmingham, Coventry and Stafford are all within 50 miles of
+    // each other), so they largely see the SAME opportunities. Dividing would
+    // treat overlapping patches as exclusive and understate it fivefold.
+    densityPerMonth: (perBaseCounts.reduce((a, b) => a + b, 0) / perBaseCounts.length / months).toFixed(1),
+    densityRange: `${Math.min(...perBaseCounts)}–${Math.max(...perBaseCounts)}`,
     inRadiusTotal: inRadius.length,
     contactRoute: pct(selected.filter((r) => r.supplier_name && !NOT_A_CONTRACTOR.test(r.supplier_name)).length, selected.length),
-    locationPrecise: pct(selected.filter((r) => locationIsSpecific(r.delivery_location)).length, selected.length),
+    locationPrecise: pct(selected.filter((r) => r.locSpecific).length, selected.length),
     startDateKnown: 0, // measured: zero of 289 award notices carry a start date
     workTypeClear: pct(selected.filter((r) => r.demand_basis === "direct").length, selected.length),
-    valueKnown: pct(selected.filter(() => false).length, selected.length), // measured: 1 of 289 nationally
   };
 
   // ---- render -----------------------------------------------------------
@@ -114,52 +180,67 @@ async function main() {
       const chUrl = contractorOk
         ? `https://find-and-update.company-information.service.gov.uk/search?q=${encodeURIComponent(r.supplier_name!)}`
         : null;
-      const locSpecific = locationIsSpecific(r.delivery_location);
+      const locSpecific = r.locSpecific;
+      // Confidence reflects how much of the card is stated rather than assumed.
+      const conf = r.demand_basis === "direct" && locSpecific ? "high" : r.demand_basis === "direct" ? "medium" : "low";
       return `
 <article class="opp">
   <header class="opp__hd">
     <span class="opp__n">${i + 1}</span>
     <h3>${esc(r.title)}</h3>
-    <span class="opp__dist mono">${r.distance !== null ? Math.round(r.distance) + " mi" : "—"}</span>
+    <span class="conf conf--${conf}">${conf} confidence</span>
+    <span class="opp__dist mono">${r.distance !== null ? Math.round(r.distance) + " mi" : "—"}<br><span class="b">${esc(r.nearestBase ?? "")}</span></span>
   </header>
   <div class="opp__grid">
-    <div><em>Awarded contractor</em><span>${esc(r.supplier_name)}${contractorOk ? "" : ' <span class="flag">not a contactable company</span>'}</span></div>
+    <div><em>Awarded contractor</em><span>${esc(r.supplier_name)}</span></div>
     <div><em>Buyer</em><span>${esc(r.buyer_name ?? "—")}</span></div>
-    <div><em>Best available location</em><span>${esc(r.delivery_location ?? r.location_text ?? "—")}${locSpecific ? "" : ' <span class="flag">buyer address, not site</span>'}</span></div>
+    <div><em>Best available location</em><span>${esc(r.delivery_location ?? r.location_text ?? "—")}${locSpecific ? ' <span class="okflag">project location</span>' : ' <span class="flag">buyer address only</span>'}</span></div>
     <div><em>Notice published</em><span class="mono">${esc(r.published_date ?? "—")}</span></div>
     <div><em>Award date</em><span class="unk">not published</span></div>
     <div><em>Start date</em><span class="unk">not published</span></div>
     <div><em>Work category</em><span>${r.demand_categories.map((c) => `<span class="cat">${esc(c.replace("_", " "))}</span>`).join(" ")}</span></div>
-    <div><em>Bidders</em><span class="mono">${r.bidders ?? "—"}</span></div>
+    <div><em>CPV codes</em><span class="mono">${esc((r.cpv_codes ?? []).slice(0, 4).join(", ") || "none given")}</span></div>
   </div>
 
   <div class="prov">
     <div class="prov__col prov--v">
-      <h4>Verified — stated in the notice</h4>
+      <h4>Verified</h4>
+      <p class="prov__note">Directly stated by the source notice</p>
       <ul>
         <li>Scheme: ${esc(r.title)}</li>
         <li>Contractor appointed: ${esc(r.supplier_name)}</li>
         <li>Buyer: ${esc(r.buyer_name ?? "not stated")}</li>
-        <li>Published: ${esc(r.published_date ?? "not stated")}</li>
+        <li>Notice published: ${esc(r.published_date ?? "not stated")}</li>
         ${r.bidders ? `<li>${r.bidders} bidders competed</li>` : ""}
+        ${locSpecific ? `<li>Project location: ${esc(r.delivery_location)}</li>` : ""}
+      </ul>
+    </div>
+    <div class="prov__col prov--c">
+      <h4>Calculated</h4>
+      <p class="prov__note">Deterministic arithmetic on source data</p>
+      <ul>
+        <li>${r.distance !== null ? Math.round(r.distance) : "—"} miles from ${esc(r.nearestBase ?? "—")}, straight line</li>
+        <li>Measured from ${locSpecific ? "the stated project location" : "the buyer's address — not the site"}</li>
       </ul>
     </div>
     <div class="prov__col prov--i">
-      <h4>Inferred — rule-based, not AI</h4>
+      <h4>Inferred</h4>
+      <p class="prov__note">Reasoned, not stated. Rule-based — no AI involved</p>
       <ul>
         <li>May create: ${r.demand_categories.map((c) => esc(c.replace("_", " "))).join(", ")}</li>
         <li>Basis: <strong>${esc(r.demand_basis ?? "—")}</strong>${r.demand_basis === "derived" ? " — the scheme is not itself earthmoving; demand is assumed downstream" : ""}</li>
-        <li class="matched">Triggered by: ${esc(d.matchedOn.slice(0, 3).join("; ") || "—")}</li>
+        <li class="matched">Matched: ${esc(d.matchedOn.slice(0, 3).join("; ") || "—")}</li>
       </ul>
     </div>
     <div class="prov__col prov--u">
       <h4>Unknown</h4>
+      <p class="prov__note">No evidence either way</p>
       <ul>
         <li>Contract value</li>
-        <li>Site address / exact location</li>
-        <li>Start date and programme</li>
+        <li>Site address${locSpecific ? " (only a town is given)" : ""}</li>
+        <li>Start date and duration</li>
         <li>Whether haulage is subcontracted or self-delivered</li>
-        <li>When packages will be let, and who decides</li>
+        <li>Tonnage, vehicle need, package timing</li>
       </ul>
     </div>
   </div>
@@ -173,7 +254,7 @@ async function main() {
     .join("\n");
 
   const html = TEMPLATE.replace("{{CARDS}}", cards)
-    .replace(/{{OPERATOR}}/g, esc(`${OPERATOR.base} base, ${OPERATOR.radiusMiles}-mile radius`))
+    .replace(/{{OPERATOR}}/g, esc(`${BASES.length} Midlands bases · ${RADIUS_MILES}-mile radius`))
     .replace("{{DENSITY}}", m.densityPerMonth)
     .replace("{{MONTHS}}", String(m.months))
     .replace("{{INRADIUS}}", String(m.inRadiusTotal))
@@ -187,7 +268,7 @@ async function main() {
   writeFileSync(out, html, "utf-8");
 
   console.log(`Wrote ${selected.length} opportunities to ${out}`);
-  console.log(`Density in ${OPERATOR.radiusMiles}mi of ${OPERATOR.base}: ${m.inRadiusTotal} over ~${months} months = ${m.densityPerMonth}/month`);
+  console.log(`Density per operator: ${m.densityPerMonth}/month (range across bases: ${m.densityRange} over ~${months} months)`);
   console.log(`Usable contact route : ${m.contactRoute}%`);
   console.log(`Location specific    : ${m.locationPrecise}%`);
   console.log(`Start date known     : ${m.startDateKnown}%`);
@@ -232,7 +313,7 @@ p{margin:0}
 .met.pending{border-style:dashed;background:var(--sunk)}
 .met.pending b{color:var(--ink-muted);font-size:1.1rem}
 .opp{background:var(--surface);border:1px solid var(--rule);border-radius:3px;overflow:hidden;break-inside:avoid}
-.opp__hd{display:grid;grid-template-columns:34px 1fr auto;gap:.7rem;align-items:baseline;padding:.75rem .9rem;border-bottom:1px solid var(--rule);background:var(--surface-2)}
+.opp__hd{display:grid;grid-template-columns:34px 1fr auto auto;gap:.7rem;align-items:baseline;padding:.75rem .9rem;border-bottom:1px solid var(--rule);background:var(--surface-2)}
 .opp__n{font-family:'IBM Plex Mono',monospace;font-size:.72rem;color:var(--accent);font-weight:600}
 .opp__hd h3{font-size:.95rem;font-weight:700}
 .opp__dist{font-size:.78rem;color:var(--ink-muted);white-space:nowrap}
@@ -243,15 +324,24 @@ p{margin:0}
 .cat{display:inline-block;background:var(--accent-soft);color:var(--accent-ink);border:1px solid var(--accent);border-radius:2px;font-size:.64rem;font-weight:600;padding:.1em .35em;text-transform:uppercase;letter-spacing:.04em}
 .unk{color:var(--ink-muted);font-style:italic}
 .flag{color:var(--crit);font-size:.72rem;font-weight:600}
-.prov{display:grid;grid-template-columns:repeat(3,1fr);gap:0}
-@media (max-width:820px){.prov{grid-template-columns:1fr}}
+.prov{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+@media (max-width:1000px){.prov{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:620px){.prov{grid-template-columns:1fr}}
 .prov__col{padding:.8rem .9rem;border-right:1px solid var(--rule)}
 .prov__col:last-child{border-right:none}
 .prov__col h4{font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;margin-bottom:.35rem}
 .prov__col ul{margin:0;padding-left:1.05rem;font-size:.8rem;color:var(--ink-2);display:flex;flex-direction:column;gap:.2rem}
 .prov--v{background:var(--good-soft)} .prov--v h4{color:var(--good)}
 .prov--i{background:var(--warn-soft)} .prov--i h4{color:var(--warn)}
+.prov--c{background:var(--surface-2)} .prov--c h4{color:var(--ink-2)}
 .prov--u{background:var(--crit-soft)} .prov--u h4{color:var(--crit)}
+.prov__note{font-size:.66rem;color:var(--ink-muted);margin-bottom:.3rem;font-style:italic}
+.okflag{color:var(--good);font-size:.72rem;font-weight:600}
+.conf{font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:.18em .45em;border-radius:2px;border:1px solid;white-space:nowrap}
+.conf--high{background:var(--good-soft);color:var(--good);border-color:var(--good)}
+.conf--medium{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
+.conf--low{background:var(--crit-soft);color:var(--crit);border-color:var(--crit)}
+.opp__dist .b{font-size:.66rem;color:var(--ink-muted)}
 .matched{font-family:'IBM Plex Mono',monospace;font-size:.7rem;color:var(--ink-muted)}
 .opp__ft{display:flex;gap:1rem;flex-wrap:wrap;padding:.6rem .9rem;font-size:.78rem;background:var(--surface-2);border-top:1px solid var(--rule)}
 .opp__ft a{color:var(--accent-ink)}
