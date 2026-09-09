@@ -1,5 +1,6 @@
 import { layout, escapeHtml, fmtGBP, badge, scoreBand, type NavContext } from "./layout.js";
 import { csrfField } from "../csrf.js";
+import { OPPORTUNITY_STATUSES } from "../queries.js";
 
 interface DetailData {
   opportunity: any;
@@ -25,7 +26,7 @@ export function renderOpportunityDetail(nav: NavContext, data: DetailData): stri
       </div>
       <form method="post" action="/opportunities/${o.id}/status" style="display:flex;gap:.4rem;flex-wrap:wrap;">
         ${csrfField(nav.csrfToken)}
-        ${["new", "interested", "contacted", "won", "lost", "not_relevant"]
+        ${OPPORTUNITY_STATUSES
           .map(
             (s) =>
               `<button class="btn btn--sm ${o.status === s ? "" : "btn--ghost"}" type="submit" name="status" value="${s}">${s.replace("_", " ")}</button>`,

@@ -4,7 +4,7 @@ import cookieSession from "cookie-session";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { attemptLogin, requireAuth, currentUser } from "./auth.js";
-import { listOpportunities, getOpportunityDetail, dashboardStats, updateStatus, getCreditBalance } from "./queries.js";
+import { listOpportunities, getOpportunityDetail, dashboardStats, updateStatus, getCreditBalance, isValidStatus, isUuid } from "./queries.js";
 import { renderLogin } from "./render/login.js";
 import { renderDiscover } from "./render/discover.js";
 import { renderMyOpportunities } from "./render/myOpportunities.js";
@@ -106,6 +106,17 @@ const loginLimiter = rateLimit({
   message: "Too many login attempts. Please wait a few minutes and try again.",
 });
 
+// Unlocking spends real credits. Generous enough that no genuine session hits
+// it (a person reads an opportunity before unlocking the next), tight enough
+// that a runaway script or stuck retry loop can't drain a balance.
+const unlockLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: "Too many unlock requests in a short time. Please wait a moment and try again.",
+});
+
 function navFor(req: express.Request, businessName: string, balance: number, active: "discover" | "my-opportunities" | "billing") {
   return { businessName, creditBalance: balance, activeNav: active, csrfToken: (req as any).session.csrfToken } as const;
 }
@@ -168,6 +179,10 @@ app.get("/discover", requireAuth, ah(async (req, res) => {
 
 app.get("/opportunities/:id", requireAuth, ah(async (req, res) => {
   const user = currentUser(req)!;
+  if (!isUuid(req.params.id)) {
+    res.status(404).send("Opportunity not found");
+    return;
+  }
   const data = await getOpportunityDetail(user.businessId, req.params.id);
   if (!data) {
     res.status(404).send("Opportunity not found");
@@ -184,14 +199,26 @@ app.get("/opportunities/:id", requireAuth, ah(async (req, res) => {
 app.post("/opportunities/:id/status", requireAuth, verifyCsrf, ah(async (req, res) => {
   const user = currentUser(req)!;
   const status = String(req.body.status);
+  if (!isUuid(req.params.id)) {
+    res.status(404).send("Opportunity not found");
+    return;
+  }
+  if (!isValidStatus(status)) {
+    res.status(400).send("Invalid status.");
+    return;
+  }
   await updateStatus(user.businessId, req.params.id, status);
   if (status === "interested") await recordEvent(user.businessId, user.userId, "opportunity_saved", req.params.id);
   res.redirect(`/opportunities/${req.params.id}`);
 }));
 
-app.post("/opportunities/:id/unlock", requireAuth, verifyCsrf, ah(async (req, res) => {
+app.post("/opportunities/:id/unlock", requireAuth, unlockLimiter, verifyCsrf, ah(async (req, res) => {
   const user = currentUser(req)!;
   const opportunityId = req.params.id;
+  if (!isUuid(opportunityId)) {
+    res.status(404).send("Opportunity not found");
+    return;
+  }
 
   const existing = await alreadyUnlocked(user.businessId, opportunityId);
   if (existing) {

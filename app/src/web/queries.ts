@@ -124,7 +124,26 @@ export async function dashboardStats(businessId: string) {
   });
 }
 
-export async function updateStatus(businessId: string, opportunityId: string, status: string): Promise<void> {
+/**
+ * The only statuses an opportunity may hold. Mirrors the CHECK constraint on
+ * opportunities.status in 0001_init.sql — the database is the backstop, this
+ * is the app-layer gate so an invalid value is a clean 400 rather than a
+ * constraint violation surfacing as a 500.
+ */
+export const OPPORTUNITY_STATUSES = ["new", "interested", "contacted", "won", "lost", "not_relevant"] as const;
+export type OpportunityStatus = (typeof OPPORTUNITY_STATUSES)[number];
+
+export function isValidStatus(value: string): value is OpportunityStatus {
+  return (OPPORTUNITY_STATUSES as readonly string[]).includes(value);
+}
+
+/** Postgres uuid columns reject non-UUID text with an error; validate first so a
+ *  malformed id in a URL is a 404, not a 500. */
+export function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+export async function updateStatus(businessId: string, opportunityId: string, status: OpportunityStatus): Promise<void> {
   await withTenant(businessId, async (client) => {
     await client.query(`update opportunities set status = $1, updated_at = now() where id = $2 and business_id = $3`, [status, opportunityId, businessId]);
   });

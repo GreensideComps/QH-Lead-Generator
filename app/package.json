@@ -31,6 +31,10 @@
     "stripe": "^17.4.0",
     "zod": "^3.23.8"
   },
+  "comment_overrides": "qs <=6.15.3 carries two moderate advisories (array-limit bypass, DoS via attacker-controlled isBuffer). express and stripe both still pin 6.15.3 transitively; 6.16.0 is the patched release and is a minor bump within the same major, so pinning it here fixes both without an express 5 upgrade.",
+  "overrides": {
+    "qs": "^6.16.0"
+  },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/cookie-session": "^2.0.49",
