@@ -114,8 +114,44 @@ const CPV_RULES: Array<{ prefix: string; cats: DemandCategory[]; basis: DemandBa
   { prefix: "45247", cats: ["earthworks", "aggregate_supply", "haulage"], basis: "derived", label: "dams/reservoirs" },
 ];
 
+/**
+ * Notices that mention construction words but commission no physical work.
+ *
+ * Found empirically in the density study, not theorised: a single Falkirk
+ * framework for "provision of Civil Engineering services" produced 18 award
+ * notices for quantity surveyors, cost consultants and CDM advisers — all
+ * matching the "civil engineering" rule, none of them moving a single tonne
+ * of anything. Professional-services and consumables frameworks are the
+ * dominant false-positive class and are excluded outright.
+ *
+ * Deliberately specific: "supply of" is NOT excluded, because "supply and
+ * delivery of aggregates" is exactly the work we want to find.
+ */
+const EXCLUSION_PATTERNS: RegExp[] = [
+  // professional and design services
+  /quantity survey|cost consultan|\bconsultancy\b|\bconsultants?\b|surveying services|\bcdm\b|principal designer|employer'?s agent|feasibility stud|design team|architectural services|professional services|pre-?qualification questionnaire/i,
+  // goods and non-works services that happen to mention haulage/waste words
+  /cleaning|hygiene|furniture|stationery|catering|uniform|workwear|\bppe\b|software|\bict\b|insurance|legal services|recruitment|training services|removals? and storage|move management|managed service/i,
+  // licensed specialist waste — real work, but not tipper/muck-away work
+  /asbestos/i,
+];
+
+function isExcluded(text: string): string | null {
+  for (const re of EXCLUSION_PATTERNS) {
+    const m = text.match(re);
+    if (m) return m[0];
+  }
+  return null;
+}
+
 export function categoriseDemand(input: DemandInput): DemandResult {
   const text = `${input.title} ${input.description ?? ""}`.toLowerCase();
+
+  const excluded = isExcluded(text);
+  if (excluded) {
+    return { categories: [], basis: null, matchedOn: [`excluded:${excluded.trim()}`] };
+  }
+
   const cats = new Set<DemandCategory>();
   const matchedOn: string[] = [];
   let sawDirect = false;

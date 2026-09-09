@@ -56,7 +56,9 @@ async function main() {
   `);
 
   const { rows: [span] } = await servicePool.query<{ months: string; earliest: string; latest: string }>(`
-    select greatest(1, round(extract(epoch from (max(published_date) - min(published_date))) / 2629746.0)) as months,
+    -- date minus date yields an integer number of days in Postgres, not an
+    -- interval, so convert days to months directly.
+    select greatest(1, round((max(published_date) - min(published_date)) / 30.44))::text as months,
            min(published_date)::text as earliest, max(published_date)::text as latest
     from procurement where notice_stage = 'award' and array_length(demand_categories, 1) > 0
   `);
