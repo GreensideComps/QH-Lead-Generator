@@ -16,6 +16,7 @@
     "extract:run": "node --loader ts-node/esm src/extraction/run-extraction.ts",
     "verify:evidence": "node --loader ts-node/esm src/extraction/verifySourceSpans.ts",
     "match:run": "node --loader ts-node/esm src/matching/run-matching.ts",
+    "analysis:density": "node --loader ts-node/esm src/analysis/opportunity-density.ts",
     "dev": "node --loader ts-node/esm src/web/server.ts",
     "test": "node --loader ts-node/esm --test test/*.test.ts"
   },
